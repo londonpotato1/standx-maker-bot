@@ -206,11 +206,70 @@ async def main_async(config_path: str, dry_run: bool = False, order_size: float 
                 # 이미 실행 중이면 무시
                 pass
 
+            def get_balance():
+                """잔고 및 레버리지 정보 반환"""
+                try:
+                    balance = rest_client.get_balance()
+                    return {
+                        'available': balance.available,
+                        'equity': balance.equity,
+                        'leverage': config.strategy.leverage,
+                        'margin_reserve_percent': config.strategy.margin_reserve_percent,
+                        'current_order_size': config.strategy.order_size_usd,
+                    }
+                except Exception as e:
+                    logger.error(f"잔고 조회 실패: {e}")
+                    return {
+                        'available': 0,
+                        'equity': 0,
+                        'leverage': config.strategy.leverage,
+                        'margin_reserve_percent': config.strategy.margin_reserve_percent,
+                        'current_order_size': config.strategy.order_size_usd,
+                    }
+
+            def get_config():
+                """현재 설정 반환"""
+                return {
+                    'strategy': {
+                        'symbols': config.strategy.symbols,
+                        'leverage': config.strategy.leverage,
+                        'order_size_usd': config.strategy.order_size_usd,
+                        'margin_reserve_percent': config.strategy.margin_reserve_percent,
+                        'num_orders_per_side': config.strategy.num_orders_per_side,
+                        'order_distances_bps': config.strategy.order_distances_bps,
+                    },
+                    'safety': {
+                        'max_position_usd': config.safety.max_position_usd,
+                    },
+                }
+
+            def set_order_size(new_size: float):
+                """주문 크기 변경"""
+                try:
+                    old_size = config.strategy.order_size_usd
+                    config.strategy.order_size_usd = new_size
+                    logger.info(f"주문 크기 변경: ${old_size} -> ${new_size}")
+                    return {
+                        'success': True,
+                        'old_size': old_size,
+                        'new_size': new_size,
+                        'leverage': config.strategy.leverage,
+                    }
+                except Exception as e:
+                    logger.error(f"주문 크기 변경 실패: {e}")
+                    return {
+                        'success': False,
+                        'error': str(e),
+                    }
+
             telegram_bot.set_callbacks(
                 on_stop=on_stop,
                 on_start=on_start,
                 get_status=strategy.get_status,
                 get_stats=lambda: strategy.get_status()['stats'],
+                get_balance=get_balance,
+                get_config=get_config,
+                set_order_size=set_order_size,
             )
             await telegram_bot.start()
 
