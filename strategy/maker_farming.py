@@ -94,8 +94,11 @@ class FarmingStats:
     total_take_profits: int = 0  # 익절 수
     total_stop_losses: int = 0  # 손절 수
     total_timeouts: int = 0  # 타임아웃 청산 수
-    estimated_points: float = 0
+    estimated_points: float = 0  # 누적 포인트
     consecutive_fill_pauses: int = 0  # 연속 체결로 인한 일시 정지 횟수
+    # 포인트 누적 계산용
+    last_points_update: float = field(default_factory=time.time)  # 마지막 포인트 업데이트 시각
+    total_uptime_seconds: float = 0  # 총 주문 유지 시간 (초)
 
 
 @dataclass
@@ -1074,17 +1077,39 @@ class MakerFarmingStrategy:
             self._effective_order_size_usd = self.config.strategy.order_size_usd
 
     def _update_points_estimate(self):
-        """포인트 추정 업데이트 (2+2 전략: 다중 주문 합산)"""
-        runtime_hours = (time.time() - self._stats.start_time) / 3600
+        """
+        포인트 추정 업데이트 (누적 방식)
 
+        StandX 포인트 계산:
+        - Band A (0-10bps): 주문금액 × 100% × (유지시간/24시간)
+        - 매 체크마다 현재 활성 주문을 기반으로 포인트를 누적
+
+        누적 방식:
+        - 이전 업데이트 이후 경과 시간만큼 현재 노출 금액에 대한 포인트 적립
+        - 주문이 없는 구간은 자동으로 0 포인트 (누적 안됨)
+        """
+        now = time.time()
+        elapsed_seconds = now - self._stats.last_points_update
+
+        # 너무 짧은 간격은 무시 (0.1초 미만)
+        if elapsed_seconds < 0.1:
+            return
+
+        # 현재 활성 주문의 총 노출 금액
         total_notional = 0
         for state in self._symbol_states.values():
-            # 2+2 전략: 모든 활성 주문 합산
             total_notional += state.get_total_notional()
 
-        # Band A 기준 100% 포인트
-        daily_points = total_notional  # $1 = 1 point/day
-        self._stats.estimated_points = daily_points * runtime_hours / 24
+        # 활성 주문이 있을 때만 포인트 누적
+        if total_notional > 0:
+            # Band A 기준: $1 노출 = 1 point/day
+            # 경과 시간(초)에 대한 포인트: notional × (elapsed / 86400)
+            points_earned = total_notional * (elapsed_seconds / 86400)
+            self._stats.estimated_points += points_earned
+            self._stats.total_uptime_seconds += elapsed_seconds
+
+        # 마지막 업데이트 시각 갱신
+        self._stats.last_points_update = now
 
     # ========== Public Methods ==========
 
@@ -1322,6 +1347,8 @@ class MakerFarmingStrategy:
                 'timeouts': self._stats.total_timeouts,
                 'estimated_points': self._stats.estimated_points,
                 'consecutive_fill_pauses': self._stats.consecutive_fill_pauses,
+                'uptime_seconds': self._stats.total_uptime_seconds,
+                'uptime_percent': (self._stats.total_uptime_seconds / max(1, runtime)) * 100,
             },
             'strategy': {
                 'type': f"{self.config.strategy.num_orders_per_side}+{self.config.strategy.num_orders_per_side}",

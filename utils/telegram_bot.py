@@ -119,6 +119,7 @@ class TelegramBot:
                 [
                     {"text": "📋 포지션", "callback_data": "positions"},
                     {"text": "⚙️ 설정", "callback_data": "config"},
+                    {"text": "📐 주문크기", "callback_data": "setsize_menu"},
                 ],
                 [
                     {"text": "🛑 봇 중지", "callback_data": "stop"},
@@ -142,6 +143,21 @@ class TelegramBot:
         """메뉴로 돌아가기 키보드"""
         return {
             "inline_keyboard": [
+                [{"text": "↩️ 메뉴로 돌아가기", "callback_data": "menu"}],
+            ]
+        }
+
+    def _get_order_size_keyboard(self):
+        """주문 크기 설정 키보드"""
+        return {
+            "inline_keyboard": [
+                [
+                    {"text": "30% 마진", "callback_data": "setsize_30"},
+                    {"text": "50% 마진", "callback_data": "setsize_50"},
+                ],
+                [
+                    {"text": "🔥 최대 마진", "callback_data": "setsize_max"},
+                ],
                 [{"text": "↩️ 메뉴로 돌아가기", "callback_data": "menu"}],
             ]
         }
@@ -182,9 +198,11 @@ class TelegramBot:
             stats = status.get('stats', {})
             runtime = status.get('runtime_hours', 0)
 
+            uptime_percent = stats.get('uptime_percent', 0)
             msg = (
                 f"📊 <b>상태 리포트</b>\n\n"
                 f"⏱ 실행 시간: {runtime:.2f}시간\n"
+                f"📈 업타임: {uptime_percent:.1f}%\n"
                 f"📝 주문 생성: {stats.get('orders_placed', 0)}건\n"
                 f"❌ 주문 취소: {stats.get('orders_cancelled', 0)}건\n"
                 f"🔄 재배치: {stats.get('rebalances', 0)}회\n"
@@ -359,6 +377,111 @@ class TelegramBot:
 
         elif callback_data == 'closeall':
             await self._handle_command('/closeall')
+
+        elif callback_data == 'setsize_menu':
+            # 주문 크기 설정 메뉴 표시
+            await self._show_setsize_menu()
+
+        elif callback_data.startswith('setsize_'):
+            # 주문 크기 변경 (30%, 50%, max)
+            await self._handle_setsize_callback(callback_data)
+
+    async def _show_setsize_menu(self):
+        """주문 크기 설정 메뉴 표시"""
+        if self._get_balance:
+            try:
+                balance_info = self._get_balance()
+                available = balance_info.get('available', 0)
+                leverage = balance_info.get('leverage', 20)
+                margin_reserve = balance_info.get('margin_reserve_percent', 2)
+                current_order_size = balance_info.get('current_order_size', 0)
+
+                # 사용 가능 마진 계산
+                usable_balance = available * (1 - margin_reserve / 100)
+                max_exposure = usable_balance * leverage
+
+                # 2+2 전략 기준 주문당 크기
+                size_30 = (max_exposure * 0.30) / 4
+                size_50 = (max_exposure * 0.50) / 4
+                size_max = max_exposure / 4
+
+                msg = (
+                    f"📐 <b>주문 크기 설정</b>\n\n"
+                    f"<b>[ 현재 상태 ]</b>\n"
+                    f"• 사용 가능 마진: <code>${usable_balance:,.2f}</code>\n"
+                    f"• 최대 노출 ({leverage}x): <code>${max_exposure:,.0f}</code>\n"
+                    f"• 현재 주문 크기: <code>${current_order_size:,.0f}</code>\n\n"
+                    f"<b>[ 버튼 클릭 시 적용 ]</b>\n"
+                    f"• 30% 마진: <code>${size_30:,.0f}</code>/주문\n"
+                    f"• 50% 마진: <code>${size_50:,.0f}</code>/주문\n"
+                    f"• 최대 마진: <code>${size_max:,.0f}</code>/주문\n\n"
+                    f"<i>2+2 전략 기준 (4개 주문)</i>"
+                )
+                self.send_message(msg, reply_markup=self._get_order_size_keyboard())
+            except Exception as e:
+                self.send_message(f"❌ 잔고 조회 실패: {e}", reply_markup=self._get_back_to_menu_keyboard())
+        else:
+            self.send_message("❌ 잔고 조회 기능이 설정되지 않았습니다.", reply_markup=self._get_back_to_menu_keyboard())
+
+    async def _handle_setsize_callback(self, callback_data: str):
+        """주문 크기 버튼 클릭 처리"""
+        if not self._get_balance or not self._set_order_size:
+            self.send_message("❌ 기능이 설정되지 않았습니다.", reply_markup=self._get_back_to_menu_keyboard())
+            return
+
+        try:
+            balance_info = self._get_balance()
+            available = balance_info.get('available', 0)
+            leverage = balance_info.get('leverage', 20)
+            margin_reserve = balance_info.get('margin_reserve_percent', 2)
+
+            # 사용 가능 마진 계산
+            usable_balance = available * (1 - margin_reserve / 100)
+            max_exposure = usable_balance * leverage
+
+            # 비율에 따른 주문 크기 계산
+            if callback_data == 'setsize_30':
+                new_size = (max_exposure * 0.30) / 4
+                percent_str = "30%"
+            elif callback_data == 'setsize_50':
+                new_size = (max_exposure * 0.50) / 4
+                percent_str = "50%"
+            elif callback_data == 'setsize_max':
+                new_size = max_exposure / 4
+                percent_str = "최대"
+            else:
+                return
+
+            # 최소값 검사
+            if new_size < 10:
+                self.send_message(
+                    f"❌ 계산된 주문 크기 (${new_size:.0f})가 너무 작습니다.\n"
+                    f"최소 $10 이상이어야 합니다.",
+                    reply_markup=self._get_back_to_menu_keyboard()
+                )
+                return
+
+            # 주문 크기 변경
+            result = self._set_order_size(new_size)
+            if result and result.get('success'):
+                old_size = result.get('old_size', 0)
+                required_margin = new_size / leverage
+
+                msg = (
+                    f"✅ <b>주문 크기 변경 완료</b>\n\n"
+                    f"• 설정: <b>{percent_str} 마진</b>\n"
+                    f"• 이전: <code>${old_size:,.0f}</code>\n"
+                    f"• 변경: <code>${new_size:,.0f}</code>\n"
+                    f"• 필요 마진: <code>${required_margin:,.2f}</code> ({leverage}x)\n\n"
+                    f"⚠️ 다음 주문부터 적용됩니다."
+                )
+                self.send_message(msg, reply_markup=self._get_back_to_menu_keyboard())
+            else:
+                error = result.get('error', '알 수 없는 오류') if result else '알 수 없는 오류'
+                self.send_message(f"❌ 변경 실패: {error}", reply_markup=self._get_back_to_menu_keyboard())
+
+        except Exception as e:
+            self.send_message(f"❌ 주문 크기 변경 실패: {e}", reply_markup=self._get_back_to_menu_keyboard())
 
     async def _handle_command(self, command: str, args: list = None):
         """명령어 처리"""
