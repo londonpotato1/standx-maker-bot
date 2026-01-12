@@ -149,7 +149,8 @@ fill_protection:
   smart_protection_threshold_seconds: 2.5
 
 # 텔레그램 알림 (선택)
+# Railway 환경변수: TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
 telegram:
-  enabled: false
-  bot_token: ""     # 또는 환경변수 TELEGRAM_BOT_TOKEN
-  chat_id: ""       # 또는 환경변수 TELEGRAM_CHAT_ID
+  enabled: true     # Railway에서 환경변수 설정 시 활성화
+  bot_token: ""     # 환경변수 TELEGRAM_BOT_TOKEN 우선
+  chat_id: ""       # 환경변수 TELEGRAM_CHAT_ID 우선
