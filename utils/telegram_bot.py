@@ -485,12 +485,12 @@ class TelegramBot:
 
         # ========== 주문 시작/정지 ==========
         elif callback_data == 'orders_enable':
-            logger.info("[텔레그램] 주문 시작 버튼 클릭됨")
+            print("[텔레그램] ★★★ 주문 시작 버튼 클릭됨", flush=True)
             if self._enable_orders:
                 try:
-                    logger.info("[텔레그램] enable_orders() 호출 시작")
+                    print("[텔레그램] enable_orders() 호출 시작", flush=True)
                     self._enable_orders()
-                    logger.info("[텔레그램] enable_orders() 호출 완료")
+                    print("[텔레그램] enable_orders() 호출 완료", flush=True)
                     self.send_message(
                         "✅ <b>주문 시작됨</b>\n\n"
                         "주문이 활성화되었습니다.\n"

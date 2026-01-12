@@ -366,8 +366,10 @@ class MakerFarmingStrategy:
 
     def enable_orders(self):
         """주문 활성화 (텔레그램에서 시작 버튼 클릭 시)"""
+        print("[전략] ★★★ enable_orders() 호출됨", flush=True)
         self._orders_enabled = True
         self._force_rebalance_requested = True  # 즉시 주문 배치
+        print(f"[전략] _orders_enabled={self._orders_enabled}, _force_rebalance_requested={self._force_rebalance_requested}", flush=True)
         logger.info("★ 주문 활성화됨 - 주문 배치 시작")
 
     def disable_orders(self):
@@ -1321,6 +1323,7 @@ class MakerFarmingStrategy:
                 # ★ 강제 재배치 요청 처리 (텔레그램에서 설정 변경 시)
                 if self._force_rebalance_requested:
                     self._force_rebalance_requested = False
+                    print("[강제재배치] ★★★ 모든 심볼 주문 재배치 시작", flush=True)
                     logger.info("[강제재배치] ★★★ 모든 심볼 주문 재배치 시작")
                     # 주문 크기 재계산
                     await self._calculate_effective_order_size()
