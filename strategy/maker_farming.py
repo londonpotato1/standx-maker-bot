@@ -357,7 +357,10 @@ class MakerFarmingStrategy:
                         if order and order.is_active:
                             self.safety_guard.clear_order_lock(order.cl_ord_id)
                     await self.order_manager.cancel_all(symbol)
-            logger.info("[즉시취소] ★★★ 모든 주문 취소 완료")
+                    # ★ 상태도 초기화 (메인 루프에서 신규 배치하도록)
+                    state.buy_orders = [None] * len(state.buy_orders)
+                    state.sell_orders = [None] * len(state.sell_orders)
+            logger.info("[즉시취소] ★★★ 모든 주문 취소 및 상태 초기화 완료")
         except Exception as e:
             logger.error(f"[즉시취소] 취소 실패: {e}")
 
@@ -1318,18 +1321,14 @@ class MakerFarmingStrategy:
                 # ★ 강제 재배치 요청 처리 (텔레그램에서 설정 변경 시)
                 if self._force_rebalance_requested:
                     self._force_rebalance_requested = False
-                    logger.info("[강제재배치] 모든 심볼 주문 재배치 시작")
+                    logger.info("[강제재배치] ★★★ 모든 심볼 주문 재배치 시작")
                     # 주문 크기 재계산
                     await self._calculate_effective_order_size()
                     for symbol in symbols:
-                        # 주문이 없으면 새로 배치, 있으면 재배치
-                        state = self._symbol_states.get(symbol)
-                        if not state or (state.get_active_buy_count() == 0 and state.get_active_sell_count() == 0):
-                            logger.info(f"[{symbol}] 주문 없음 - 신규 배치")
-                            await self._place_orders(symbol)
-                        else:
-                            # force=True: Duration/Band 조건 무시하고 모든 주문 즉시 재배치
-                            await self._rebalance(symbol, "강제 재배치 (설정 변경)", force=True)
+                        # 즉시 취소에서 상태가 초기화됨 → 항상 신규 배치
+                        logger.info(f"[{symbol}] 강제 재배치 - 신규 주문 배치")
+                        await self._place_orders(symbol)
+                    logger.info("[강제재배치] ★★★ 모든 심볼 주문 재배치 완료")
                     continue
 
                 for symbol in symbols:
