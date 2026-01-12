@@ -1127,10 +1127,18 @@ class TelegramBot:
                         for pos in positions:
                             side_emoji = "🟢" if pos['side'] == 'long' else "🔴"
                             msg += f"{side_emoji} {pos['symbol']} {pos['side'].upper()} {pos['size']:.4f}\n"
-                        msg += "\n⏳ 종료 중..."
+                        msg += "\n⏳ 모든 주문 취소 후 포지션 종료 중..."
                         self.send_message(msg)
                     except Exception as e:
                         logger.error(f"포지션 확인 실패: {e}")
+
+                # ★ 먼저 모든 주문 비활성화 (주문 취소됨)
+                if self._disable_orders:
+                    try:
+                        self._disable_orders()
+                        logger.info("[포지션청산] 주문 비활성화 완료")
+                    except Exception as e:
+                        logger.error(f"주문 비활성화 실패: {e}")
 
                 # 포지션 종료 실행
                 try:
@@ -1139,14 +1147,15 @@ class TelegramBot:
                         closed = result.get('closed', [])
                         if closed:
                             msg = "✅ <b>포지션 종료 완료</b>\n\n"
+                            msg += "• 모든 주문 취소됨\n"
                             for c in closed:
                                 msg += f"• {c['symbol']}: {c['side']} {c['size']:.4f} 종료\n"
                             self.send_message(msg, reply_markup=self._get_back_to_menu_keyboard())
                         else:
-                            self.send_message("📭 종료할 포지션이 없었습니다.", reply_markup=self._get_back_to_menu_keyboard())
+                            self.send_message("📭 종료할 포지션이 없었습니다.\n• 모든 주문 취소됨", reply_markup=self._get_back_to_menu_keyboard())
                     else:
                         error = result.get('error', '알 수 없는 오류')
-                        self.send_message(f"❌ 포지션 종료 실패: {error}", reply_markup=self._get_back_to_menu_keyboard())
+                        self.send_message(f"❌ 포지션 종료 실패: {error}\n• 주문은 취소됨", reply_markup=self._get_back_to_menu_keyboard())
                 except Exception as e:
                     self.send_message(f"❌ 포지션 종료 실패: {e}", reply_markup=self._get_back_to_menu_keyboard())
             else:
@@ -1154,10 +1163,19 @@ class TelegramBot:
 
         elif command == '/stop':
             if self._on_stop:
-                self.send_message("🛑 봇 중지 요청 중...")
+                self.send_message("🛑 모든 주문 취소 후 봇 중지 중...")
+
+                # ★ 먼저 모든 주문 비활성화 (주문 취소됨)
+                if self._disable_orders:
+                    try:
+                        self._disable_orders()
+                        logger.info("[봇종료] 주문 비활성화 완료")
+                    except Exception as e:
+                        logger.error(f"주문 비활성화 실패: {e}")
+
                 try:
                     await self._on_stop()
-                    self.send_message("✅ 봇이 중지되었습니다.", reply_markup=self._get_back_to_menu_keyboard())
+                    self.send_message("✅ 봇이 중지되었습니다.\n• 모든 주문 취소됨", reply_markup=self._get_back_to_menu_keyboard())
                 except Exception as e:
                     self.send_message(f"❌ 봇 중지 실패: {e}", reply_markup=self._get_back_to_menu_keyboard())
             else:

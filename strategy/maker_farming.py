@@ -389,15 +389,24 @@ class MakerFarmingStrategy:
             # BUY 주문 체결 → SELL로 청산, SELL 주문 체결 → BUY로 청산
             close_side = OrderSide.SELL if order.side == OrderSide.BUY else OrderSide.BUY
             self._pending_liquidations.append((order.symbol, close_side, order.quantity))
-            logger.info(f"[즉시청산] 대기열 추가: {order.symbol} {close_side.value} {order.quantity}")
+            logger.warning(f"[즉시청산] ★★★ 대기열 추가: {order.symbol} {close_side.value} {order.quantity} (대기열 크기: {len(self._pending_liquidations)})")
+
+            # ★ 비동기 태스크로 즉시 청산 스케줄 (콜백이 동기라서 태스크 생성)
+            try:
+                loop = asyncio.get_event_loop()
+                if loop.is_running():
+                    asyncio.create_task(self._execute_immediate_liquidation(order.symbol, close_side, order.quantity))
+                    logger.info(f"[즉시청산] 비동기 태스크 생성됨")
+            except Exception as e:
+                logger.error(f"[즉시청산] 태스크 생성 실패: {e} - 메인 루프에서 처리됨")
 
         elif order.status == ManagedOrderStatus.CANCELLED:
             self._stats.total_orders_cancelled += 1
 
     async def _execute_immediate_liquidation(self, symbol: str, side: OrderSide, quantity: float):
-        """즉시 청산 실행"""
+        """즉시 청산 실행 (비동기 태스크)"""
         try:
-            logger.warning(f"즉시 청산 실행: {symbol} {side.value} {quantity}")
+            logger.warning(f"[즉시청산태스크] ★ 실행 시작: {symbol} {side.value} {quantity}")
             result = await self.order_manager.create_market_order(
                 symbol=symbol,
                 side=side,
@@ -406,16 +415,17 @@ class MakerFarmingStrategy:
             )
             if result:
                 self._stats.total_liquidations += 1
-                logger.info(f"즉시 청산 성공: {symbol} {side.value} {quantity}")
+                logger.warning(f"[즉시청산태스크] ✅ 성공: {symbol} {side.value} {quantity}")
                 # 대기열에서 제거 (이미 처리됨)
                 try:
                     self._pending_liquidations.remove((symbol, side, quantity))
+                    logger.info(f"[즉시청산태스크] 대기열에서 제거됨")
                 except ValueError:
-                    pass
+                    logger.info(f"[즉시청산태스크] 대기열에 없음 (이미 처리됨)")
             else:
-                logger.error(f"즉시 청산 실패: {symbol} {side.value} {quantity}")
+                logger.error(f"[즉시청산태스크] ❌ 실패 (result=None): {symbol} {side.value} {quantity}")
         except Exception as e:
-            logger.error(f"즉시 청산 오류: {e}")
+            logger.error(f"[즉시청산태스크] ❌ 오류: {e}")
 
     async def _monitor_position_for_exit(self):
         """
@@ -539,10 +549,13 @@ class MakerFarmingStrategy:
 
     async def _process_pending_liquidations(self):
         """대기 중인 청산 처리"""
+        if self._pending_liquidations:
+            logger.warning(f"[청산처리] 대기열 크기: {len(self._pending_liquidations)}")
+
         while self._pending_liquidations:
             symbol, side, quantity = self._pending_liquidations.pop(0)
             try:
-                logger.warning(f"자동 청산 실행: {symbol} {side.value} {quantity}")
+                logger.warning(f"[청산처리] 실행 시작: {symbol} {side.value} {quantity}")
                 result = await self.order_manager.create_market_order(
                     symbol=symbol,
                     side=side,
@@ -551,11 +564,11 @@ class MakerFarmingStrategy:
                 )
                 if result:
                     self._stats.total_liquidations += 1
-                    logger.info(f"자동 청산 성공: {symbol} {side.value} {quantity}")
+                    logger.warning(f"[청산처리] ✅ 성공: {symbol} {side.value} {quantity}")
                 else:
-                    logger.error(f"자동 청산 실패: {symbol} {side.value} {quantity}")
+                    logger.error(f"[청산처리] ❌ 실패 (result=None): {symbol} {side.value} {quantity}")
             except Exception as e:
-                logger.error(f"청산 오류: {e}")
+                logger.error(f"[청산처리] ❌ 오류: {e}")
 
     async def _check_and_liquidate_positions(self):
         """
