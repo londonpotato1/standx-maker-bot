@@ -360,28 +360,11 @@ class MakerFarmingStrategy:
             # 연속 체결 보호: 체결 시각 기록 및 검사
             self._check_consecutive_fills()
 
-            # 포지션 홀딩 모드 시작 (±1% 익절/손절 대기)
-            self._held_position = HeldPosition(
-                symbol=order.symbol,
-                side=order.side,  # 체결된 주문의 방향 = 포지션 방향
-                quantity=order.quantity,
-                entry_price=order.price,
-                entry_time=time.time(),
-                take_profit_pct=1.0,  # +1% 익절
-                stop_loss_pct=1.0,    # -1% 손절
-                timeout_seconds=300.0,  # 5분 타임아웃
-            )
-
-            logger.info(
-                f"[포지션홀딩] 시작: {order.side.value} {order.quantity} @ ${order.price:,.2f} "
-                f"(익절: +{self._held_position.take_profit_pct}%, 손절: -{self._held_position.stop_loss_pct}%, "
-                f"타임아웃: {self._held_position.timeout_seconds}초)"
-            )
-
-            # 포지션 모니터링 태스크 시작
-            if self._position_monitor_task and not self._position_monitor_task.done():
-                self._position_monitor_task.cancel()
-            self._position_monitor_task = asyncio.create_task(self._monitor_position_for_exit())
+            # 즉시 청산: 청산 대기열에 추가 (다음 루프에서 처리)
+            # BUY 주문 체결 → SELL로 청산, SELL 주문 체결 → BUY로 청산
+            close_side = OrderSide.SELL if order.side == OrderSide.BUY else OrderSide.BUY
+            self._pending_liquidations.append((order.symbol, close_side, order.quantity))
+            logger.info(f"[즉시청산] 대기열 추가: {order.symbol} {close_side.value} {order.quantity}")
 
         elif order.status == ManagedOrderStatus.CANCELLED:
             self._stats.total_orders_cancelled += 1
