@@ -159,28 +159,28 @@ async def main_async(config_path: str, dry_run: bool = False, order_size: float 
         return 1
 
     # 클라이언트 초기화
-    logger.info("REST 클라이언트 초기화 중...")
+    print("[MAIN] REST 클라이언트 초기화 중...", flush=True)
     rest_client = StandXRestClient(auth, config.standx.base_url)
-    logger.info("WebSocket 클라이언트 초기화 중...")
+    print("[MAIN] WebSocket 클라이언트 초기화 중...", flush=True)
     ws_client = StandXWebSocket(config.standx.ws_url, auth)
-    logger.info("클라이언트 초기화 완료")
+    print("[MAIN] 클라이언트 초기화 완료", flush=True)
 
     # 잔액 확인
-    logger.info("잔액 조회 중...")
+    print("[MAIN] 잔액 조회 중...", flush=True)
     try:
         balance = rest_client.get_balance()
-        logger.info(f"잔액: ${balance.available:.2f} available, ${balance.equity:.2f} equity")
+        print(f"[MAIN] 잔액: ${balance.available:.2f} available, ${balance.equity:.2f} equity", flush=True)
     except Exception as e:
-        logger.warning(f"잔액 조회 실패: {e}")
+        print(f"[MAIN] 잔액 조회 실패: {e}", flush=True)
 
     # 전략 초기화
-    logger.info("전략 초기화 중...")
+    print("[MAIN] 전략 초기화 중...", flush=True)
     strategy = MakerFarmingStrategy(config, rest_client, ws_client)
-    logger.info("전략 초기화 완료")
+    print("[MAIN] 전략 초기화 완료", flush=True)
 
     # 텔레그램 봇 초기화
     telegram_bot = None
-    logger.info(f"텔레그램 설정 확인: enabled={config.telegram.enabled}, token={'있음' if config.telegram.bot_token else '없음'}, chat_id={'있음' if config.telegram.chat_id else '없음'}")
+    print(f"[MAIN] 텔레그램 설정: enabled={config.telegram.enabled}, token={'있음' if config.telegram.bot_token else '없음'}, chat_id={'있음' if config.telegram.chat_id else '없음'}", flush=True)
     if config.telegram.enabled and config.telegram.bot_token and config.telegram.chat_id:
         telegram_config = TelegramConfig(
             bot_token=config.telegram.bot_token,
@@ -207,9 +207,9 @@ async def main_async(config_path: str, dry_run: bool = False, order_size: float 
 
     # 전략 시작
     try:
-        logger.info("전략 시작 중...")
+        print("[MAIN] 전략 시작 중...", flush=True)
         await strategy.start()
-        logger.info("전략 시작 완료")
+        print("[MAIN] 전략 시작 완료", flush=True)
 
         # 텔레그램 봇 시작
         telegram_report_task = None
