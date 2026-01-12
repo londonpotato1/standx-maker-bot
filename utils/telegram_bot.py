@@ -588,11 +588,39 @@ class TelegramBot:
         else:
             self.send_message(f"❓ 알 수 없는 명령어: {command}\n/help 로 도움말을 확인하세요.")
 
+    def _set_bot_commands(self):
+        """봇 명령어 목록 등록 (/ 입력 시 힌트 표시)"""
+        try:
+            url = f"{self.base_url}/setMyCommands"
+            commands = [
+                {"command": "start", "description": "메인 메뉴 표시"},
+                {"command": "menu", "description": "메인 메뉴 표시"},
+                {"command": "status", "description": "현재 봇 상태 조회"},
+                {"command": "stats", "description": "통계 조회"},
+                {"command": "balance", "description": "잔고 및 주문 가능 금액"},
+                {"command": "positions", "description": "현재 포지션 조회"},
+                {"command": "config", "description": "현재 설정 조회"},
+                {"command": "setsize", "description": "주문 크기 변경 (예: /setsize 3000)"},
+                {"command": "closeall", "description": "모든 포지션 시장가 청산"},
+                {"command": "stop", "description": "봇 중지"},
+            ]
+            import json
+            response = requests.post(url, json={"commands": commands}, timeout=10)
+            if response.status_code == 200:
+                logger.info("텔레그램 봇 명령어 목록 등록 완료")
+            else:
+                logger.warning(f"텔레그램 명령어 등록 실패: {response.text}")
+        except Exception as e:
+            logger.error(f"텔레그램 명령어 등록 실패: {e}")
+
     async def start(self):
         """텔레그램 봇 시작"""
         if not self.config.enabled:
             logger.info("텔레그램 봇 비활성화됨")
             return
+
+        # 봇 명령어 목록 등록
+        self._set_bot_commands()
 
         self._running = True
         self._poll_task = asyncio.create_task(self._poll_updates())
