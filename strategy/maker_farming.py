@@ -1218,10 +1218,13 @@ class MakerFarmingStrategy:
         await asyncio.sleep(2)
 
         # 초기 주문 배치 (주문 활성화 상태일 때만)
+        print(f"[전략시작] _orders_enabled={self._orders_enabled}", flush=True)
         if self._orders_enabled:
+            print("[전략시작] 주문 활성화 상태 - 초기 주문 배치", flush=True)
             for symbol in symbols:
                 await self._place_orders(symbol)
         else:
+            print("★ 주문 대기 모드 - 텔레그램에서 '주문 시작' 버튼을 눌러주세요", flush=True)
             logger.info("★ 주문 대기 모드 - 텔레그램에서 '주문 시작' 버튼을 눌러주세요")
 
     async def run(self):
