@@ -1291,8 +1291,14 @@ class MakerFarmingStrategy:
                         # 주문 크기 재계산
                         await self._calculate_effective_order_size()
                         for symbol in symbols:
-                            # force=True: Duration/Band 조건 무시하고 모든 주문 즉시 재배치
-                            await self._rebalance(symbol, "강제 재배치 (설정 변경)", force=True)
+                            # 주문이 없으면 새로 배치, 있으면 재배치
+                            state = self._symbol_states.get(symbol)
+                            if not state or (state.get_active_buy_count() == 0 and state.get_active_sell_count() == 0):
+                                logger.info(f"[{symbol}] 주문 없음 - 신규 배치")
+                                await self._place_orders(symbol)
+                            else:
+                                # force=True: Duration/Band 조건 무시하고 모든 주문 즉시 재배치
+                                await self._rebalance(symbol, "강제 재배치 (설정 변경)", force=True)
                         continue
 
                     for symbol in symbols:
