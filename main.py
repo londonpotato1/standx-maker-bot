@@ -93,7 +93,7 @@ async def telegram_status_reporter(telegram_bot: TelegramBot, strategy: MakerFar
         try:
             await asyncio.sleep(interval)
             status = strategy.get_status()
-            telegram_bot.send_status_report(status)
+            telegram_bot.send_status_report(status, with_menu=False)  # 자동 리포트는 메뉴 버튼 없이
         except asyncio.CancelledError:
             break
         except Exception as e:

@@ -86,7 +86,7 @@ class TelegramBot:
         self._close_all_positions = close_all_positions
         self._get_positions = get_positions
 
-    def send_message(self, text: str, parse_mode: str = "HTML") -> bool:
+    def send_message(self, text: str, parse_mode: str = "HTML", reply_markup: dict = None) -> bool:
         """메시지 전송"""
         if not self.config.enabled:
             return False
@@ -98,24 +98,68 @@ class TelegramBot:
                 "text": text,
                 "parse_mode": parse_mode,
             }
+            if reply_markup:
+                import json
+                data["reply_markup"] = json.dumps(reply_markup)
             response = requests.post(url, data=data, timeout=10)
             return response.status_code == 200
         except Exception as e:
             logger.error(f"텔레그램 메시지 전송 실패: {e}")
             return False
 
+    def _get_main_menu_keyboard(self):
+        """메인 메뉴 인라인 키보드"""
+        return {
+            "inline_keyboard": [
+                [
+                    {"text": "📊 상태", "callback_data": "status"},
+                    {"text": "📈 통계", "callback_data": "stats"},
+                    {"text": "💰 잔고", "callback_data": "balance"},
+                ],
+                [
+                    {"text": "📋 포지션", "callback_data": "positions"},
+                    {"text": "⚙️ 설정", "callback_data": "config"},
+                ],
+                [
+                    {"text": "🛑 봇 중지", "callback_data": "stop"},
+                    {"text": "❌ 포지션 청산", "callback_data": "closeall_confirm"},
+                ],
+            ]
+        }
+
+    def _get_closeall_confirm_keyboard(self):
+        """포지션 청산 확인 키보드"""
+        return {
+            "inline_keyboard": [
+                [
+                    {"text": "⚠️ 예, 모두 청산", "callback_data": "closeall"},
+                    {"text": "↩️ 취소", "callback_data": "menu"},
+                ],
+            ]
+        }
+
+    def _get_back_to_menu_keyboard(self):
+        """메뉴로 돌아가기 키보드"""
+        return {
+            "inline_keyboard": [
+                [{"text": "↩️ 메뉴로 돌아가기", "callback_data": "menu"}],
+            ]
+        }
+
+    def send_main_menu(self, text: str = None):
+        """메인 메뉴 전송"""
+        if text is None:
+            text = "🤖 <b>StandX Maker Bot</b>\n\n원하는 기능을 선택하세요:"
+        self.send_message(text, reply_markup=self._get_main_menu_keyboard())
+
     def send_startup_message(self):
         """시작 메시지 전송"""
         msg = (
             "🚀 <b>StandX Maker Bot 시작</b>\n\n"
             "봇이 Railway에서 실행되었습니다.\n\n"
-            "<b>사용 가능한 명령어:</b>\n"
-            "/status - 현재 상태 조회\n"
-            "/stats - 통계 조회\n"
-            "/stop - 봇 중지\n"
-            "/start - 봇 시작"
+            "아래 버튼으로 봇을 제어하세요:"
         )
-        self.send_message(msg)
+        self.send_message(msg, reply_markup=self._get_main_menu_keyboard())
 
     def send_shutdown_message(self, reason: str = "정상 종료"):
         """종료 메시지 전송"""
@@ -132,7 +176,7 @@ class TelegramBot:
             msg += f"\n\n<pre>{traceback_str}</pre>"
         self.send_message(msg)
 
-    def send_status_report(self, status: Dict[str, Any]):
+    def send_status_report(self, status: Dict[str, Any], with_menu: bool = True):
         """상태 리포트 전송"""
         try:
             stats = status.get('stats', {})
@@ -163,7 +207,10 @@ class TelegramBot:
                     sell = sym_status['sell_order']
                     msg += f"  🔴 SELL: ${sell['price']:,.2f}\n"
 
-            self.send_message(msg)
+            if with_menu:
+                self.send_message(msg, reply_markup=self._get_back_to_menu_keyboard())
+            else:
+                self.send_message(msg)
         except Exception as e:
             logger.error(f"상태 리포트 전송 실패: {e}")
 
@@ -197,14 +244,45 @@ class TelegramBot:
                 logger.error(f"텔레그램 폴링 오류: {e}")
                 await asyncio.sleep(5)
 
+    def _answer_callback_query(self, callback_query_id: str, text: str = None):
+        """콜백 쿼리 응답 (버튼 클릭 시 로딩 해제)"""
+        try:
+            url = f"{self.base_url}/answerCallbackQuery"
+            data = {"callback_query_id": callback_query_id}
+            if text:
+                data["text"] = text
+            requests.post(url, data=data, timeout=5)
+        except Exception as e:
+            logger.error(f"콜백 쿼리 응답 실패: {e}")
+
     async def _handle_update(self, update: dict):
         """업데이트 처리"""
+        # 콜백 쿼리 처리 (버튼 클릭)
+        callback_query = update.get('callback_query')
+        if callback_query:
+            callback_id = callback_query.get('id')
+            callback_data = callback_query.get('data', '')
+            chat_id = str(callback_query.get('message', {}).get('chat', {}).get('id', ''))
+
+            # 허용된 chat_id만 처리
+            if chat_id != self.config.chat_id:
+                logger.warning(f"허용되지 않은 chat_id (callback): {chat_id}")
+                return
+
+            # 버튼 로딩 해제
+            self._answer_callback_query(callback_id)
+
+            # 콜백 데이터 처리
+            await self._handle_callback(callback_data)
+            return
+
+        # 일반 메시지 처리
         message = update.get('message', {})
         text = message.get('text', '')
         chat_id = str(message.get('chat', {}).get('id', ''))
 
         # 허용된 chat_id만 처리
-        if chat_id != self.config.chat_id:
+        if chat_id and chat_id != self.config.chat_id:
             logger.warning(f"허용되지 않은 chat_id: {chat_id}")
             return
 
@@ -214,6 +292,58 @@ class TelegramBot:
             command = parts[0].lower()
             args = parts[1:] if len(parts) > 1 else []
             await self._handle_command(command, args)
+
+    async def _handle_callback(self, callback_data: str):
+        """콜백 데이터 처리 (버튼 클릭)"""
+        if callback_data == 'menu':
+            self.send_main_menu()
+
+        elif callback_data == 'status':
+            await self._handle_command('/status')
+
+        elif callback_data == 'stats':
+            await self._handle_command('/stats')
+
+        elif callback_data == 'balance':
+            await self._handle_command('/balance')
+
+        elif callback_data == 'positions':
+            await self._handle_command('/positions')
+
+        elif callback_data == 'config':
+            await self._handle_command('/config')
+
+        elif callback_data == 'stop':
+            await self._handle_command('/stop')
+
+        elif callback_data == 'closeall_confirm':
+            # 청산 확인 메시지
+            if self._get_positions:
+                try:
+                    positions = self._get_positions()
+                    if not positions:
+                        self.send_message("📭 종료할 포지션이 없습니다.", reply_markup=self._get_back_to_menu_keyboard())
+                        return
+
+                    msg = "⚠️ <b>모든 포지션을 시장가로 청산하시겠습니까?</b>\n\n"
+                    total_pnl = 0
+                    for pos in positions:
+                        side_emoji = "🟢" if pos['side'] == 'long' else "🔴"
+                        pnl = pos['unrealized_pnl']
+                        total_pnl += pnl
+                        msg += f"{side_emoji} {pos['symbol']} {pos['side'].upper()} {pos['size']:.4f} (PnL: ${pnl:+,.2f})\n"
+
+                    pnl_emoji = "📈" if total_pnl >= 0 else "📉"
+                    msg += f"\n{pnl_emoji} <b>총 PnL: ${total_pnl:+,.2f}</b>"
+
+                    self.send_message(msg, reply_markup=self._get_closeall_confirm_keyboard())
+                except Exception as e:
+                    self.send_message(f"❌ 포지션 조회 실패: {e}", reply_markup=self._get_back_to_menu_keyboard())
+            else:
+                self.send_message("❌ 포지션 조회 기능이 설정되지 않았습니다.", reply_markup=self._get_back_to_menu_keyboard())
+
+        elif callback_data == 'closeall':
+            await self._handle_command('/closeall')
 
     async def _handle_command(self, command: str, args: list = None):
         """명령어 처리"""
@@ -225,9 +355,9 @@ class TelegramBot:
                     status = self._get_status()
                     self.send_status_report(status)
                 except Exception as e:
-                    self.send_message(f"❌ 상태 조회 실패: {e}")
+                    self.send_message(f"❌ 상태 조회 실패: {e}", reply_markup=self._get_back_to_menu_keyboard())
             else:
-                self.send_message("❌ 상태 조회 기능이 설정되지 않았습니다.")
+                self.send_message("❌ 상태 조회 기능이 설정되지 않았습니다.", reply_markup=self._get_back_to_menu_keyboard())
 
         elif command == '/stats':
             if self._get_stats:
@@ -241,11 +371,11 @@ class TelegramBot:
                         f"체결: {stats.get('fills', 0)}건\n"
                         f"예상 포인트: {stats.get('estimated_points', 0):.1f}"
                     )
-                    self.send_message(msg)
+                    self.send_message(msg, reply_markup=self._get_back_to_menu_keyboard())
                 except Exception as e:
-                    self.send_message(f"❌ 통계 조회 실패: {e}")
+                    self.send_message(f"❌ 통계 조회 실패: {e}", reply_markup=self._get_back_to_menu_keyboard())
             else:
-                self.send_message("❌ 통계 조회 기능이 설정되지 않았습니다.")
+                self.send_message("❌ 통계 조회 기능이 설정되지 않았습니다.", reply_markup=self._get_back_to_menu_keyboard())
 
         elif command == '/balance':
             if self._get_balance:
@@ -278,18 +408,19 @@ class TelegramBot:
                         f"• 현재 설정: <code>${current_order_size:,.0f}</code>\n\n"
                         f"💡 <i>/setsize {recommended_per_order:.0f} 로 변경 가능</i>"
                     )
-                    self.send_message(msg)
+                    self.send_message(msg, reply_markup=self._get_back_to_menu_keyboard())
                 except Exception as e:
-                    self.send_message(f"❌ 잔고 조회 실패: {e}")
+                    self.send_message(f"❌ 잔고 조회 실패: {e}", reply_markup=self._get_back_to_menu_keyboard())
             else:
-                self.send_message("❌ 잔고 조회 기능이 설정되지 않았습니다.")
+                self.send_message("❌ 잔고 조회 기능이 설정되지 않았습니다.", reply_markup=self._get_back_to_menu_keyboard())
 
         elif command == '/setsize':
             if not args:
                 self.send_message(
                     "⚠️ <b>사용법</b>: /setsize <금액>\n\n"
                     "예시: /setsize 3000\n"
-                    "(레버리지 적용 후 주문당 노출 금액)"
+                    "(레버리지 적용 후 주문당 노출 금액)",
+                    reply_markup=self._get_back_to_menu_keyboard()
                 )
                 return
 
@@ -297,10 +428,10 @@ class TelegramBot:
                 try:
                     new_size = float(args[0])
                     if new_size < 10:
-                        self.send_message("❌ 주문 크기는 최소 $10 이상이어야 합니다.")
+                        self.send_message("❌ 주문 크기는 최소 $10 이상이어야 합니다.", reply_markup=self._get_back_to_menu_keyboard())
                         return
                     if new_size > 100000:
-                        self.send_message("❌ 주문 크기가 너무 큽니다 (최대 $100,000).")
+                        self.send_message("❌ 주문 크기가 너무 큽니다 (최대 $100,000).", reply_markup=self._get_back_to_menu_keyboard())
                         return
 
                     result = self._set_order_size(new_size)
@@ -316,15 +447,15 @@ class TelegramBot:
                             f"• 필요 마진: <code>${required_margin:,.2f}</code> ({leverage}x)\n\n"
                             f"⚠️ 다음 주문부터 적용됩니다."
                         )
-                        self.send_message(msg)
+                        self.send_message(msg, reply_markup=self._get_back_to_menu_keyboard())
                     else:
-                        self.send_message(f"❌ 변경 실패: {result.get('error', '알 수 없는 오류')}")
+                        self.send_message(f"❌ 변경 실패: {result.get('error', '알 수 없는 오류')}", reply_markup=self._get_back_to_menu_keyboard())
                 except ValueError:
-                    self.send_message("❌ 잘못된 금액 형식입니다. 숫자만 입력하세요.")
+                    self.send_message("❌ 잘못된 금액 형식입니다. 숫자만 입력하세요.", reply_markup=self._get_back_to_menu_keyboard())
                 except Exception as e:
-                    self.send_message(f"❌ 주문 크기 변경 실패: {e}")
+                    self.send_message(f"❌ 주문 크기 변경 실패: {e}", reply_markup=self._get_back_to_menu_keyboard())
             else:
-                self.send_message("❌ 주문 크기 변경 기능이 설정되지 않았습니다.")
+                self.send_message("❌ 주문 크기 변경 기능이 설정되지 않았습니다.", reply_markup=self._get_back_to_menu_keyboard())
 
         elif command == '/config':
             if self._get_config:
@@ -346,18 +477,18 @@ class TelegramBot:
                         f"• 최대 포지션: <code>${safety.get('max_position_usd', 0):,.0f}</code>\n\n"
                         f"💡 <i>/setsize <금액> 으로 주문 크기 변경</i>"
                     )
-                    self.send_message(msg)
+                    self.send_message(msg, reply_markup=self._get_back_to_menu_keyboard())
                 except Exception as e:
-                    self.send_message(f"❌ 설정 조회 실패: {e}")
+                    self.send_message(f"❌ 설정 조회 실패: {e}", reply_markup=self._get_back_to_menu_keyboard())
             else:
-                self.send_message("❌ 설정 조회 기능이 설정되지 않았습니다.")
+                self.send_message("❌ 설정 조회 기능이 설정되지 않았습니다.", reply_markup=self._get_back_to_menu_keyboard())
 
         elif command == '/positions':
             if self._get_positions:
                 try:
                     positions = self._get_positions()
                     if not positions:
-                        self.send_message("📭 현재 열린 포지션이 없습니다.")
+                        self.send_message("📭 현재 열린 포지션이 없습니다.", reply_markup=self._get_back_to_menu_keyboard())
                         return
 
                     msg = "📊 <b>현재 포지션</b>\n\n"
@@ -377,13 +508,12 @@ class TelegramBot:
                         )
 
                     pnl_emoji = "📈" if total_pnl >= 0 else "📉"
-                    msg += f"━━━━━━━━━━━━━━\n{pnl_emoji} <b>총 PnL: <code>${total_pnl:+,.2f}</code></b>\n\n"
-                    msg += "💡 <i>/closeall 로 모든 포지션 종료</i>"
-                    self.send_message(msg)
+                    msg += f"━━━━━━━━━━━━━━\n{pnl_emoji} <b>총 PnL: <code>${total_pnl:+,.2f}</code></b>"
+                    self.send_message(msg, reply_markup=self._get_back_to_menu_keyboard())
                 except Exception as e:
-                    self.send_message(f"❌ 포지션 조회 실패: {e}")
+                    self.send_message(f"❌ 포지션 조회 실패: {e}", reply_markup=self._get_back_to_menu_keyboard())
             else:
-                self.send_message("❌ 포지션 조회 기능이 설정되지 않았습니다.")
+                self.send_message("❌ 포지션 조회 기능이 설정되지 않았습니다.", reply_markup=self._get_back_to_menu_keyboard())
 
         elif command == '/closeall':
             if self._close_all_positions:
@@ -392,7 +522,7 @@ class TelegramBot:
                     try:
                         positions = self._get_positions()
                         if not positions:
-                            self.send_message("📭 종료할 포지션이 없습니다.")
+                            self.send_message("📭 종료할 포지션이 없습니다.", reply_markup=self._get_back_to_menu_keyboard())
                             return
 
                         # 포지션 정보 표시
@@ -414,57 +544,41 @@ class TelegramBot:
                             msg = "✅ <b>포지션 종료 완료</b>\n\n"
                             for c in closed:
                                 msg += f"• {c['symbol']}: {c['side']} {c['size']:.4f} 종료\n"
-                            self.send_message(msg)
+                            self.send_message(msg, reply_markup=self._get_back_to_menu_keyboard())
                         else:
-                            self.send_message("📭 종료할 포지션이 없었습니다.")
+                            self.send_message("📭 종료할 포지션이 없었습니다.", reply_markup=self._get_back_to_menu_keyboard())
                     else:
                         error = result.get('error', '알 수 없는 오류')
-                        self.send_message(f"❌ 포지션 종료 실패: {error}")
+                        self.send_message(f"❌ 포지션 종료 실패: {error}", reply_markup=self._get_back_to_menu_keyboard())
                 except Exception as e:
-                    self.send_message(f"❌ 포지션 종료 실패: {e}")
+                    self.send_message(f"❌ 포지션 종료 실패: {e}", reply_markup=self._get_back_to_menu_keyboard())
             else:
-                self.send_message("❌ 포지션 종료 기능이 설정되지 않았습니다.")
+                self.send_message("❌ 포지션 종료 기능이 설정되지 않았습니다.", reply_markup=self._get_back_to_menu_keyboard())
 
         elif command == '/stop':
             if self._on_stop:
                 self.send_message("🛑 봇 중지 요청 중...")
                 try:
                     await self._on_stop()
-                    self.send_message("✅ 봇이 중지되었습니다.")
+                    self.send_message("✅ 봇이 중지되었습니다.", reply_markup=self._get_back_to_menu_keyboard())
                 except Exception as e:
-                    self.send_message(f"❌ 봇 중지 실패: {e}")
+                    self.send_message(f"❌ 봇 중지 실패: {e}", reply_markup=self._get_back_to_menu_keyboard())
             else:
-                self.send_message("❌ 중지 기능이 설정되지 않았습니다.")
+                self.send_message("❌ 중지 기능이 설정되지 않았습니다.", reply_markup=self._get_back_to_menu_keyboard())
 
         elif command == '/start':
             if self._on_start:
                 self.send_message("🚀 봇 시작 요청 중...")
                 try:
                     await self._on_start()
-                    self.send_message("✅ 봇이 시작되었습니다.")
+                    self.send_message("✅ 봇이 시작되었습니다.", reply_markup=self._get_back_to_menu_keyboard())
                 except Exception as e:
-                    self.send_message(f"❌ 봇 시작 실패: {e}")
+                    self.send_message(f"❌ 봇 시작 실패: {e}", reply_markup=self._get_back_to_menu_keyboard())
             else:
-                self.send_message("❌ 시작 기능이 설정되지 않았습니다.")
+                self.send_message("❌ 시작 기능이 설정되지 않았습니다.", reply_markup=self._get_back_to_menu_keyboard())
 
-        elif command == '/help':
-            msg = (
-                "📖 <b>사용 가능한 명령어</b>\n\n"
-                "<b>[ 모니터링 ]</b>\n"
-                "/status - 현재 상태 조회\n"
-                "/stats - 통계 조회\n"
-                "/balance - 잔고 및 주문 가능 금액\n"
-                "/positions - 현재 포지션 조회\n\n"
-                "<b>[ 설정 ]</b>\n"
-                "/config - 현재 설정 조회\n"
-                "/setsize <금액> - 주문 크기 변경\n\n"
-                "<b>[ 제어 ]</b>\n"
-                "/stop - 봇 중지\n"
-                "/start - 봇 시작\n"
-                "/closeall - 모든 포지션 시장가 종료\n"
-                "/help - 도움말"
-            )
-            self.send_message(msg)
+        elif command == '/help' or command == '/menu':
+            self.send_main_menu()
 
         else:
             self.send_message(f"❓ 알 수 없는 명령어: {command}\n/help 로 도움말을 확인하세요.")
