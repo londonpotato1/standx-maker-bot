@@ -407,10 +407,11 @@ class MakerFarmingStrategy:
         if order.status == ManagedOrderStatus.FILLED:
             # 청산 주문(mkt_)은 무시 - 무한 루프 방지
             if "_mkt_" in order.cl_ord_id:
-                logger.info(f"청산 주문 체결 확인: {order.cl_ord_id}")
+                print(f"[체결] 청산 주문 체결 확인: {order.cl_ord_id}", flush=True)
                 return
 
             self._stats.total_fills += 1
+            print(f"[체결] ★★★ 주문 체결됨! {order.symbol} {order.side.value} {order.quantity} @ ${order.price:,.2f}", flush=True)
             logger.warning(f"★ 주문 체결: {order.symbol} {order.side.value} {order.quantity} @ ${order.price:,.2f}")
 
             # 연속 체결 보호: 체결 시각 기록 및 검사
@@ -420,15 +421,16 @@ class MakerFarmingStrategy:
             # BUY 주문 체결 → SELL로 청산, SELL 주문 체결 → BUY로 청산
             close_side = OrderSide.SELL if order.side == OrderSide.BUY else OrderSide.BUY
             self._pending_liquidations.append((order.symbol, close_side, order.quantity))
-            logger.warning(f"[즉시청산] ★★★ 대기열 추가: {order.symbol} {close_side.value} {order.quantity} (대기열 크기: {len(self._pending_liquidations)})")
+            print(f"[체결] 즉시청산 대기열 추가: {order.symbol} {close_side.value} {order.quantity}", flush=True)
 
             # ★ 비동기 태스크로 즉시 청산 스케줄 (콜백이 동기라서 태스크 생성)
             try:
                 loop = asyncio.get_event_loop()
                 if loop.is_running():
                     asyncio.create_task(self._execute_immediate_liquidation(order.symbol, close_side, order.quantity))
-                    logger.info(f"[즉시청산] 비동기 태스크 생성됨")
+                    print(f"[체결] 즉시청산 태스크 생성됨", flush=True)
             except Exception as e:
+                print(f"[체결] 즉시청산 태스크 생성 실패: {e}", flush=True)
                 logger.error(f"[즉시청산] 태스크 생성 실패: {e} - 메인 루프에서 처리됨")
 
         elif order.status == ManagedOrderStatus.CANCELLED:
@@ -437,6 +439,7 @@ class MakerFarmingStrategy:
     async def _execute_immediate_liquidation(self, symbol: str, side: OrderSide, quantity: float):
         """즉시 청산 실행 (비동기 태스크)"""
         try:
+            print(f"[즉시청산태스크] ★★★ 실행 시작: {symbol} {side.value} {quantity}", flush=True)
             logger.warning(f"[즉시청산태스크] ★ 실행 시작: {symbol} {side.value} {quantity}")
             result = await self.order_manager.create_market_order(
                 symbol=symbol,
@@ -1229,8 +1232,11 @@ class MakerFarmingStrategy:
 
     async def run(self):
         """메인 루프"""
+        print("[RUN] ★★★ 메인 루프 시작", flush=True)
         symbols = self.config.strategy.symbols
         check_interval = self.config.strategy.check_interval_seconds
+        print(f"[RUN] symbols={symbols}, check_interval={check_interval}", flush=True)
+        print(f"[RUN] _orders_enabled={self._orders_enabled}", flush=True)
 
         # 안전 감시 태스크 시작
         safety_task = asyncio.create_task(self.safety_guard.run(symbols))
@@ -1314,10 +1320,10 @@ class MakerFarmingStrategy:
                                 break
 
                     if has_orders:
-                        logger.info("[주문정지] 모든 기존 주문 취소 중...")
+                        print("[주문정지] 모든 기존 주문 취소 중...", flush=True)
                         for symbol in symbols:
                             await self.order_manager.cancel_all(symbol)
-                        logger.info("[주문정지] 주문 취소 완료 - 대기 모드")
+                        print("[주문정지] 주문 취소 완료 - 대기 모드", flush=True)
 
                     # 대기 상태에서는 주문 없이 계속 모니터링만
                     await asyncio.sleep(check_interval)
@@ -1341,12 +1347,14 @@ class MakerFarmingStrategy:
                     # 재배치 필요 여부 확인 (Band 상태 기반)
                     needs_rebalance, reason = await self._check_rebalance(symbol)
                     if needs_rebalance:
+                        print(f"[LOOP] ★ 재배치 필요: {symbol} - {reason}", flush=True)
                         # "주문 부족"인 경우 _place_orders()로 부족분 보충
                         # Band 이탈/Drift인 경우 _rebalance()로 기존 주문 재배치
                         if "주문 부족" in reason or "주문 없음" in reason:
-                            logger.info(f"[{symbol}] {reason} - 주문 보충")
+                            print(f"[LOOP] 주문 보충 시작: {symbol}", flush=True)
                             await self._place_orders(symbol)
                         else:
+                            print(f"[LOOP] 재배치 시작: {symbol}", flush=True)
                             await self._rebalance(symbol, reason)
 
                 # 통계 업데이트
