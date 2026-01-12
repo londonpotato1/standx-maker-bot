@@ -192,6 +192,16 @@ class TelegramBot:
                 f"💰 예상 포인트: {stats.get('estimated_points', 0):.1f}\n"
             )
 
+            # 연속 체결 보호 상태 표시
+            if status.get('consecutive_fill_paused'):
+                remaining = status.get('consecutive_fill_pause_remaining', 0)
+                msg += f"\n🛑 <b>연속체결 일시정지:</b> {remaining:.0f}초 남음\n"
+
+            # 연속 체결 정지 횟수 표시
+            pause_count = stats.get('consecutive_fill_pauses', 0)
+            if pause_count > 0:
+                msg += f"⏸ 연속체결 정지: {pause_count}회\n"
+
             # 심볼별 상태
             symbols = status.get('symbols', {})
             for symbol, sym_status in symbols.items():

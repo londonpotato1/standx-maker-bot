@@ -95,6 +95,7 @@ class FarmingStats:
     total_stop_losses: int = 0  # 손절 수
     total_timeouts: int = 0  # 타임아웃 청산 수
     estimated_points: float = 0
+    consecutive_fill_pauses: int = 0  # 연속 체결로 인한 일시 정지 횟수
 
 
 @dataclass
@@ -212,6 +213,10 @@ class MakerFarmingStrategy:
         self._held_position: Optional[HeldPosition] = None  # 현재 홀딩 중인 포지션
         self._position_monitor_task: Optional[asyncio.Task] = None  # 포지션 모니터링 태스크
 
+        # 연속 체결 보호 상태
+        self._fill_timestamps: List[float] = []  # 체결 시각 리스트
+        self._consecutive_fill_pause_until: float = 0  # 일시 정지 종료 시각
+
         # 콜백 등록
         self.safety_guard.on_safety_event(self._on_safety_event)
         self.order_manager.on_order_update(self._on_order_update)
@@ -231,6 +236,49 @@ class MakerFarmingStrategy:
             f"(취소: {event.details.get('cancelled', 0)}건)"
         )
 
+    def _check_consecutive_fills(self):
+        """
+        연속 체결 검사 및 자동 일시 정지
+
+        윈도우 내 체결 횟수가 max_fills 초과 시 자동 정지
+        """
+        cfp = self.config.consecutive_fill_protection
+        if not cfp.enabled:
+            return
+
+        now = time.time()
+
+        # 체결 시각 기록
+        self._fill_timestamps.append(now)
+
+        # 윈도우 밖 기록 제거
+        window = cfp.window_seconds
+        self._fill_timestamps = [t for t in self._fill_timestamps if now - t < window]
+
+        # 연속 체결 횟수 확인
+        fill_count = len(self._fill_timestamps)
+
+        if fill_count >= cfp.max_fills:
+            # 자동 일시 정지 활성화
+            self._consecutive_fill_pause_until = now + cfp.pause_duration_seconds
+            self._stats.consecutive_fill_pauses += 1
+
+            logger.critical(
+                f"★★★ 연속 체결 감지! {fill_count}회/{cfp.window_seconds}초 → "
+                f"{cfp.pause_duration_seconds}초 일시 정지 ★★★"
+            )
+
+            # 체결 기록 초기화 (정지 후 재시작 시 새로 카운트)
+            self._fill_timestamps.clear()
+
+    def is_consecutive_fill_paused(self) -> bool:
+        """연속 체결로 인한 일시 정지 상태인지"""
+        return time.time() < self._consecutive_fill_pause_until
+
+    def get_consecutive_fill_pause_remaining(self) -> float:
+        """연속 체결 일시 정지 남은 시간 (초)"""
+        return max(0, self._consecutive_fill_pause_until - time.time())
+
     def _on_order_update(self, order: ManagedOrder):
         """주문 업데이트 처리"""
         if order.status == ManagedOrderStatus.FILLED:
@@ -241,6 +289,9 @@ class MakerFarmingStrategy:
 
             self._stats.total_fills += 1
             logger.warning(f"★ 주문 체결: {order.symbol} {order.side.value} {order.quantity} @ ${order.price:,.2f}")
+
+            # 연속 체결 보호: 체결 시각 기록 및 검사
+            self._check_consecutive_fills()
 
             # 포지션 홀딩 모드 시작 (±1% 익절/손절 대기)
             self._held_position = HeldPosition(
@@ -1056,6 +1107,14 @@ class MakerFarmingStrategy:
                 if self._held_position:
                     # 홀딩 상태 간단히 표시 (10초마다)
                     pass  # 모니터링 태스크에서 로깅
+
+                # 연속 체결 일시 정지 중에는 신규 주문 스킵
+                elif self.is_consecutive_fill_paused():
+                    remaining = self.get_consecutive_fill_pause_remaining()
+                    # 10초마다 로깅
+                    if int(remaining) % 10 == 0 and int(remaining) > 0:
+                        logger.warning(f"[연속체결보호] 일시 정지 중... {remaining:.0f}초 남음")
+
                 else:
                     for symbol in symbols:
                         # 재배치 필요 여부 확인 (Band 상태 기반)
@@ -1192,6 +1251,8 @@ class MakerFarmingStrategy:
             'emergency_stopped': self.safety_guard.is_emergency_stopped(),
             'holding_position': self._held_position is not None,
             'held_position': held_pos_info,
+            'consecutive_fill_paused': self.is_consecutive_fill_paused(),
+            'consecutive_fill_pause_remaining': self.get_consecutive_fill_pause_remaining(),
             'runtime_seconds': runtime,
             'runtime_hours': runtime / 3600,
             'symbols': {},
@@ -1205,6 +1266,7 @@ class MakerFarmingStrategy:
                 'stop_losses': self._stats.total_stop_losses,
                 'timeouts': self._stats.total_timeouts,
                 'estimated_points': self._stats.estimated_points,
+                'consecutive_fill_pauses': self._stats.consecutive_fill_pauses,
             },
             'strategy': {
                 'type': f"{self.config.strategy.num_orders_per_side}+{self.config.strategy.num_orders_per_side}",

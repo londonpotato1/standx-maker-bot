@@ -138,6 +138,15 @@ class FillProtectionConfig:
 
 
 @dataclass
+class ConsecutiveFillProtectionConfig:
+    """연속 체결 보호 설정"""
+    enabled: bool = True
+    window_seconds: float = 60.0  # 체결 감지 윈도우 (초)
+    max_fills: int = 3  # 최대 허용 체결 횟수
+    pause_duration_seconds: float = 300.0  # 자동 정지 시간 (초)
+
+
+@dataclass
 class Config:
     """전체 설정"""
     standx: StandXConfig = field(default_factory=StandXConfig)
@@ -145,6 +154,7 @@ class Config:
     strategy: StrategyConfig = field(default_factory=StrategyConfig)
     safety: SafetyConfig = field(default_factory=SafetyConfig)
     fill_protection: FillProtectionConfig = field(default_factory=FillProtectionConfig)
+    consecutive_fill_protection: ConsecutiveFillProtectionConfig = field(default_factory=ConsecutiveFillProtectionConfig)
     telegram: TelegramConfig = field(default_factory=TelegramConfig)
 
     @classmethod
@@ -315,6 +325,16 @@ class Config:
                 queue=queue_protection,
                 check_interval_seconds=float(fp.get('check_interval_seconds', 0.1)),
                 smart_protection_threshold_seconds=float(fp.get('smart_protection_threshold_seconds', 2.5)),
+            )
+
+        # Consecutive Fill Protection 설정
+        if 'consecutive_fill_protection' in config_data:
+            cfp = config_data['consecutive_fill_protection']
+            config.consecutive_fill_protection = ConsecutiveFillProtectionConfig(
+                enabled=cfp.get('enabled', True),
+                window_seconds=float(cfp.get('window_seconds', 60.0)),
+                max_fills=int(cfp.get('max_fills', 3)),
+                pause_duration_seconds=float(cfp.get('pause_duration_seconds', 300.0)),
             )
 
         # Telegram 설정 (환경변수 우선)

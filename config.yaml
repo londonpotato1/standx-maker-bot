@@ -34,9 +34,9 @@ strategy:
 
   # 2+2 전략 설정 (방향당 주문 개수)
   num_orders_per_side: 2    # 1=1+1, 2=2+2 전략
-  order_distances_bps:      # 각 주문의 거리 (bps) - Band A 중심부
-    - 5                     # 주문1: 5bps (Band A 중심, 5bps 여유)
-    - 7                     # 주문2: 7bps (Band A 내, 3bps 여유)
+  order_distances_bps:      # 각 주문의 거리 (bps) - Band A 경계 근처
+    - 7.5                   # 주문1: 7.5bps (Band A 내, 2.5bps 여유)
+    - 8.5                   # 주문2: 8.5bps (Band A 경계, 1.5bps 여유)
 
   # 거리 설정 (bps = 0.01%)
   # Band A 범위: 0-10 bps (100% 포인트)
@@ -97,6 +97,17 @@ safety:
   # 기존 즉시 취소 거리 (Lock 중에는 무시됨, Hard Kill 아닌 경우)
   # 0으로 설정하면 비활성화 (Spread 0 문제로 인해 비활성화)
   cancel_if_within_bps: 0
+
+# 연속 체결 보호 설정 (Consecutive Fill Protection)
+# 단시간에 여러 번 체결되면 자동으로 일시 정지
+consecutive_fill_protection:
+  enabled: true
+  # 체결 감지 윈도우 (초) - 이 시간 내 체결 횟수 카운트
+  window_seconds: 60
+  # 최대 허용 체결 횟수 - 초과 시 자동 정지
+  max_fills: 3
+  # 자동 정지 시간 (초) - 이 시간 후 자동 재개
+  pause_duration_seconds: 300
 
 # 체결 방지 보호 설정 (Fill Protection)
 # Binance mark price 선행 감지 + 오더북 큐 프로텍션
