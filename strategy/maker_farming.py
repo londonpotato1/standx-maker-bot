@@ -1229,11 +1229,12 @@ class MakerFarmingStrategy:
 
                 # 포지션 홀딩 중에는 메이커 주문 스킵
                 if self._held_position:
-                    # 홀딩 상태 간단히 표시 (10초마다)
-                    pass  # 모니터링 태스크에서 로깅
+                    # 홀딩 상태 - 모니터링 태스크에서 관리
+                    await asyncio.sleep(check_interval)
+                    continue
 
                 # 연속 체결 일시 정지 중에는 신규 주문 스킵
-                elif self.is_consecutive_fill_paused():
+                if self.is_consecutive_fill_paused():
                     remaining = self.get_consecutive_fill_pause_remaining()
                     # 10초마다 로깅
                     if int(remaining) % 10 == 0 and int(remaining) > 0:
@@ -1258,60 +1259,64 @@ class MakerFarmingStrategy:
                         except Exception as e:
                             logger.error(f"포지션 조회 실패: {e}")
 
-                else:
-                    # 단계 리셋 체크 (30분간 체결 없으면 1단계로)
-                    self._check_escalation_reset()
+                    # 연속 체결 정지 중에는 대기 후 다음 루프
+                    await asyncio.sleep(check_interval)
+                    continue
 
-                    # ★ 주문 비활성화 상태면 모든 주문 취소 후 대기
-                    if not self._orders_enabled:
-                        # 기존 주문이 있으면 모두 취소
-                        has_orders = False
-                        for symbol in symbols:
-                            state = self._symbol_states.get(symbol)
-                            if state:
-                                active_orders = state.get_active_buy_count() + state.get_active_sell_count()
-                                if active_orders > 0:
-                                    has_orders = True
-                                    break
+                # 정상 운영 상태
+                # 단계 리셋 체크 (30분간 체결 없으면 1단계로)
+                self._check_escalation_reset()
 
-                        if has_orders:
-                            logger.info("[주문정지] 모든 기존 주문 취소 중...")
-                            for symbol in symbols:
-                                await self.order_manager.cancel_all(symbol)
-                            logger.info("[주문정지] 주문 취소 완료 - 대기 모드")
-
-                        # 대기 상태에서는 주문 없이 계속 모니터링만
-                        await asyncio.sleep(check_interval)
-                        continue
-
-                    # ★ 강제 재배치 요청 처리 (텔레그램에서 설정 변경 시)
-                    if self._force_rebalance_requested:
-                        self._force_rebalance_requested = False
-                        logger.info("[강제재배치] 모든 심볼 주문 재배치 시작")
-                        # 주문 크기 재계산
-                        await self._calculate_effective_order_size()
-                        for symbol in symbols:
-                            # 주문이 없으면 새로 배치, 있으면 재배치
-                            state = self._symbol_states.get(symbol)
-                            if not state or (state.get_active_buy_count() == 0 and state.get_active_sell_count() == 0):
-                                logger.info(f"[{symbol}] 주문 없음 - 신규 배치")
-                                await self._place_orders(symbol)
-                            else:
-                                # force=True: Duration/Band 조건 무시하고 모든 주문 즉시 재배치
-                                await self._rebalance(symbol, "강제 재배치 (설정 변경)", force=True)
-                        continue
-
+                # ★ 주문 비활성화 상태면 모든 주문 취소 후 대기
+                if not self._orders_enabled:
+                    # 기존 주문이 있으면 모두 취소
+                    has_orders = False
                     for symbol in symbols:
-                        # 재배치 필요 여부 확인 (Band 상태 기반)
-                        needs_rebalance, reason = await self._check_rebalance(symbol)
-                        if needs_rebalance:
-                            # "주문 부족"인 경우 _place_orders()로 부족분 보충
-                            # Band 이탈/Drift인 경우 _rebalance()로 기존 주문 재배치
-                            if "주문 부족" in reason or "주문 없음" in reason:
-                                logger.info(f"[{symbol}] {reason} - 주문 보충")
-                                await self._place_orders(symbol)
-                            else:
-                                await self._rebalance(symbol, reason)
+                        state = self._symbol_states.get(symbol)
+                        if state:
+                            active_orders = state.get_active_buy_count() + state.get_active_sell_count()
+                            if active_orders > 0:
+                                has_orders = True
+                                break
+
+                    if has_orders:
+                        logger.info("[주문정지] 모든 기존 주문 취소 중...")
+                        for symbol in symbols:
+                            await self.order_manager.cancel_all(symbol)
+                        logger.info("[주문정지] 주문 취소 완료 - 대기 모드")
+
+                    # 대기 상태에서는 주문 없이 계속 모니터링만
+                    await asyncio.sleep(check_interval)
+                    continue
+
+                # ★ 강제 재배치 요청 처리 (텔레그램에서 설정 변경 시)
+                if self._force_rebalance_requested:
+                    self._force_rebalance_requested = False
+                    logger.info("[강제재배치] 모든 심볼 주문 재배치 시작")
+                    # 주문 크기 재계산
+                    await self._calculate_effective_order_size()
+                    for symbol in symbols:
+                        # 주문이 없으면 새로 배치, 있으면 재배치
+                        state = self._symbol_states.get(symbol)
+                        if not state or (state.get_active_buy_count() == 0 and state.get_active_sell_count() == 0):
+                            logger.info(f"[{symbol}] 주문 없음 - 신규 배치")
+                            await self._place_orders(symbol)
+                        else:
+                            # force=True: Duration/Band 조건 무시하고 모든 주문 즉시 재배치
+                            await self._rebalance(symbol, "강제 재배치 (설정 변경)", force=True)
+                    continue
+
+                for symbol in symbols:
+                    # 재배치 필요 여부 확인 (Band 상태 기반)
+                    needs_rebalance, reason = await self._check_rebalance(symbol)
+                    if needs_rebalance:
+                        # "주문 부족"인 경우 _place_orders()로 부족분 보충
+                        # Band 이탈/Drift인 경우 _rebalance()로 기존 주문 재배치
+                        if "주문 부족" in reason or "주문 없음" in reason:
+                            logger.info(f"[{symbol}] {reason} - 주문 보충")
+                            await self._place_orders(symbol)
+                        else:
+                            await self._rebalance(symbol, reason)
 
                 # 통계 업데이트
                 self._update_points_estimate()
