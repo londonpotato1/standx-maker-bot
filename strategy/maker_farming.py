@@ -228,6 +228,9 @@ class MakerFarmingStrategy:
         # 주문 활성화 플래그 (텔레그램에서 시작/정지 제어)
         self._orders_enabled: bool = False  # 기본값: 비활성화 (수동 시작 필요)
 
+        # 모든 포지션 청산 요청 플래그 (연속 체결 보호 발동 시)
+        self._request_close_all_positions: bool = False
+
         # 콜백 등록
         self.safety_guard.on_safety_event(self._on_safety_event)
         self.order_manager.on_order_update(self._on_order_update)
@@ -300,6 +303,10 @@ class MakerFarmingStrategy:
 
             # 체결 기록 초기화 (정지 후 재시작 시 새로 카운트)
             self._fill_timestamps.clear()
+
+            # ★ 연속 체결 정지 시 모든 포지션 청산 요청
+            self._request_close_all_positions = True
+            logger.warning("★ 연속 체결 정지 - 모든 포지션 청산 예약됨")
 
     def is_consecutive_fill_paused(self) -> bool:
         """연속 체결로 인한 일시 정지 상태인지"""
@@ -1166,9 +1173,12 @@ class MakerFarmingStrategy:
         # 초기 가격 로드 대기
         await asyncio.sleep(2)
 
-        # 초기 주문 배치
-        for symbol in symbols:
-            await self._place_orders(symbol)
+        # 초기 주문 배치 (주문 활성화 상태일 때만)
+        if self._orders_enabled:
+            for symbol in symbols:
+                await self._place_orders(symbol)
+        else:
+            logger.info("★ 주문 대기 모드 - 텔레그램에서 '주문 시작' 버튼을 눌러주세요")
 
     async def run(self):
         """메인 루프"""
@@ -1216,6 +1226,24 @@ class MakerFarmingStrategy:
                     if int(remaining) % 10 == 0 and int(remaining) > 0:
                         level = self._consecutive_fill_escalation_level
                         logger.warning(f"[연속체결보호] {level}단계 일시 정지 중... {remaining:.0f}초 남음")
+
+                    # ★ 연속 체결 정지 시 모든 포지션 청산 (한 번만 실행)
+                    if self._request_close_all_positions:
+                        self._request_close_all_positions = False
+                        logger.warning("★ 연속 체결 정지 - 모든 포지션 청산 시작")
+                        # 모든 주문 취소
+                        for symbol in symbols:
+                            await self.order_manager.cancel_all(symbol)
+                        # 현재 포지션 조회 및 청산
+                        try:
+                            positions = self.rest_client.get_positions()
+                            for pos in positions:
+                                if abs(pos.size) > 0:
+                                    close_side = OrderSide.SELL if pos.size > 0 else OrderSide.BUY
+                                    self._pending_liquidations.append((pos.symbol, close_side, abs(pos.size)))
+                                    logger.warning(f"[연속체결정지] 포지션 청산 대기열 추가: {pos.symbol} {close_side.value} {abs(pos.size)}")
+                        except Exception as e:
+                            logger.error(f"포지션 조회 실패: {e}")
 
                 else:
                     # 단계 리셋 체크 (30분간 체결 없으면 1단계로)
