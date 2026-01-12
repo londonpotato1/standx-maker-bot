@@ -485,9 +485,12 @@ class TelegramBot:
 
         # ========== 주문 시작/정지 ==========
         elif callback_data == 'orders_enable':
+            logger.info("[텔레그램] 주문 시작 버튼 클릭됨")
             if self._enable_orders:
                 try:
+                    logger.info("[텔레그램] enable_orders() 호출 시작")
                     self._enable_orders()
+                    logger.info("[텔레그램] enable_orders() 호출 완료")
                     self.send_message(
                         "✅ <b>주문 시작됨</b>\n\n"
                         "주문이 활성화되었습니다.\n"
@@ -495,8 +498,10 @@ class TelegramBot:
                         reply_markup=self._get_main_menu_keyboard()
                     )
                 except Exception as e:
+                    logger.error(f"[텔레그램] enable_orders() 실패: {e}")
                     self.send_message(f"❌ 주문 시작 실패: {e}", reply_markup=self._get_main_menu_keyboard())
             else:
+                logger.warning("[텔레그램] enable_orders 콜백이 설정되지 않음")
                 self.send_message("❌ 주문 시작 기능이 설정되지 않았습니다.", reply_markup=self._get_main_menu_keyboard())
 
         elif callback_data == 'orders_disable':
