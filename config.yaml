@@ -1,0 +1,139 @@
+# StandX 메이커 포인트 파밍 봇 설정
+# ====================================
+
+# StandX API 설정
+standx:
+  base_url: "https://perps.standx.com"
+  ws_url: "wss://perps.standx.com/ws-stream/v1"
+  chain: "bsc"  # bsc 또는 solana
+
+# 지갑 설정 (환경변수 사용 권장)
+# .env 파일에서 WALLET_ADDRESS, WALLET_PRIVATE_KEY 설정
+wallet:
+  address: ""      # 또는 환경변수 WALLET_ADDRESS
+  private_key: ""  # 또는 환경변수 WALLET_PRIVATE_KEY
+
+# 전략 설정
+strategy:
+  # 거래할 심볼 목록 (StandX는 BTC-USD만 지원)
+  symbols:
+    - "BTC-USD"
+
+  # 레버리지 설정
+  # 20x 레버리지 = $228 잔고로 $4,560 노출 가능
+  leverage: 20
+
+  # 심볼당 주문 크기 (USD) - 레버리지 적용 후 노출 금액
+  # 계산: (잔고 × 레버리지 × 0.8) / 4개 주문
+  # 예: ($228 × 10 × 0.8) / 4 = $456/주문
+  order_size_usd: 450
+
+  # 마진 예약 비율 (%)
+  # 2% = 안전 마진 예약
+  margin_reserve_percent: 2
+
+  # 2+2 전략 설정 (방향당 주문 개수)
+  num_orders_per_side: 2    # 1=1+1, 2=2+2 전략
+  order_distances_bps:      # 각 주문의 거리 (bps) - Band A 중심부
+    - 5                     # 주문1: 5bps (Band A 중심, 5bps 여유)
+    - 7                     # 주문2: 7bps (Band A 내, 3bps 여유)
+
+  # 거리 설정 (bps = 0.01%)
+  # Band A 범위: 0-10 bps (100% 포인트)
+  min_distance_bps: 5       # 최소 거리 (체결 방지)
+  target_distance_bps: 8    # 목표 거리 (1+1 전략용, 2+2에서는 order_distances_bps 사용)
+  max_distance_bps: 10      # 최대 거리 (Band A 한계)
+
+  # Band A 이탈 경고 거리 (bps)
+  # 이 거리 이상이면 곧 Band A 이탈로 판단
+  band_warning_bps: 9.2
+
+  # 동적 거리 설정 (spread/volatility 기반)
+  dynamic_distance:
+    enabled: true           # 업타임 개선을 위해 활성화
+    min_bps: 5.5            # 동적 최소 거리
+    max_bps: 8.5            # 동적 최대 거리 (Band A 내, 10bps 경계에서 여유)
+    spread_factor: 0.5      # 스프레드 * factor
+    volatility_factor: 0.3  # 변동성 * factor (낮춤)
+
+  # Lock & Cooldown (3초 Duration 요구사항 충족)
+  # StandX는 주문이 3초 이상 유지되어야 포인트 지급
+  order_lock_seconds: 3.5   # 주문 생성 후 취소 금지 시간 (3초 + 여유 0.5초)
+  rebalance_cooldown_seconds: 5  # 재배치 후 대기 (Duration 보장)
+
+  # 재배치 트리거 (Band 이탈 + Drift 병행)
+  rebalance_on_band_exit: true  # Band A 이탈 시 재배치
+  drift_threshold_bps: 15       # 기준가격 변동 15bps 초과 시 재배치 (업타임 개선)
+
+  # 체크 주기 (초) - 빠른 대응
+  check_interval_seconds: 0.3
+
+# 안전 설정
+safety:
+  # 최대 허용 포지션 (USD)
+  # 이 금액 초과 시 비상 정지
+  # 레버리지 10x × $228 = $2,280 + 여유
+  max_position_usd: 2500
+
+  # Pre-Kill 조건 (신규 주문 일시 중단, 기존 주문은 유지)
+  # Hard Kill보다 낮은 임계값으로 "사전 예방" 역할
+  pre_kill:
+    # 1초 내 변동성 임계값 (이 이상이면 신규 주문 중단)
+    volatility_threshold_bps: 20    # 30→20 (더 민감하게)
+    # Mark/Mid 괴리 임계값 (bps)
+    mark_mid_divergence_bps: 5      # 10→5 (더 민감하게)
+    # 일시 중단 기간 (초) - 업타임 개선을 위해 짧게
+    pause_duration_seconds: 0.5     # 1→0.5
+
+  # Hard Kill 조건 (Lock 무시하고 즉시 취소)
+  hard_kill:
+    # 스프레드 붕괴 (best에 급접근) - 체결 테스트용으로 비활성화
+    min_spread_bps: 0
+    # 급변 감지 (1초 내 변동)
+    max_volatility_bps: 30
+    # 데이터 stale 임계값 (초) - 30초로 늘림 (WebSocket 불안정 대응)
+    stale_threshold_seconds: 30
+
+  # 기존 즉시 취소 거리 (Lock 중에는 무시됨, Hard Kill 아닌 경우)
+  # 0으로 설정하면 비활성화 (Spread 0 문제로 인해 비활성화)
+  cancel_if_within_bps: 0
+
+# 체결 방지 보호 설정 (Fill Protection)
+# Binance mark price 선행 감지 + 오더북 큐 프로텍션
+fill_protection:
+  # Binance Mark Price 선행 감지
+  # StandX보다 100-500ms 빠른 Binance 가격으로 체결 위험 사전 감지
+  binance:
+    enabled: true
+    # 변동 트리거 (bps) - 이 이상 변동 시 해당 방향 주문 취소
+    # 예: +3bps 상승 → 매수 주문 취소 (매수가에 도달 위험)
+    trigger_bps: 3.0
+    # 감지 윈도우 (초)
+    window_seconds: 0.5
+    # 연속 트리거 방지 쿨다운 (초)
+    cooldown_seconds: 0.5
+
+  # 오더북 큐 프로텍션
+  # 내 주문 앞의 물량이 급감하면 체결 위험 → 선제 취소
+  queue_protection:
+    enabled: true
+    # 앞 물량 감소 임계값 (%) - 이 비율 이상 감소 시 취소
+    drop_threshold_percent: 30.0
+    # 모니터링 윈도우 (초)
+    window_seconds: 2.0
+    # 최소 앞 물량 (USD) - 이 이하면 즉시 취소
+    min_queue_ahead_usd: 100.0
+
+  # 체크 주기 (초) - 빠른 대응 필요
+  check_interval_seconds: 0.1
+
+  # 스마트 보호: Lock 경과 임계값 (초)
+  # Lock 경과 시간이 이 값 미만이면 Fill Protection 스킵 (포인트 적립 보장)
+  # Lock 경과 시간이 이 값 이상이면 Fill Protection 발동 (체결 방지)
+  smart_protection_threshold_seconds: 2.5
+
+# 텔레그램 알림 (선택)
+telegram:
+  enabled: false
+  bot_token: ""     # 또는 환경변수 TELEGRAM_BOT_TOKEN
+  chat_id: ""       # 또는 환경변수 TELEGRAM_CHAT_ID

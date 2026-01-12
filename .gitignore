@@ -1,0 +1,57 @@
+# 환경 설정
+.env
+.env.local
+*.env
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# 가상환경
+venv/
+ENV/
+env/
+.venv/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# 로그
+*.log
+logs/
+
+# 테스트
+.pytest_cache/
+.coverage
+htmlcov/
+
+# 민감한 데이터 (개인키, 암호화 파일)
+data/
+credentials.enc
+.salt
+
+# 기타
+.DS_Store
+Thumbs.db
