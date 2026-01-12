@@ -444,6 +444,9 @@ async def main_async(config_path: str, dry_run: bool = False, order_size: float 
                 set_strategy=set_strategy,
                 set_distances=set_distances,
                 set_protection=set_protection,
+                enable_orders=strategy.enable_orders,
+                disable_orders=strategy.disable_orders,
+                is_orders_enabled=strategy.is_orders_enabled,
             )
             await telegram_bot.start()
 

@@ -225,6 +225,9 @@ class MakerFarmingStrategy:
         # 강제 재배치 요청 플래그
         self._force_rebalance_requested: bool = False
 
+        # 주문 활성화 플래그 (텔레그램에서 시작/정지 제어)
+        self._orders_enabled: bool = False  # 기본값: 비활성화 (수동 시작 필요)
+
         # 콜백 등록
         self.safety_guard.on_safety_event(self._on_safety_event)
         self.order_manager.on_order_update(self._on_order_update)
@@ -324,6 +327,21 @@ class MakerFarmingStrategy:
         """
         self._force_rebalance_requested = True
         logger.info("[강제재배치] 요청됨 - 다음 루프에서 모든 주문 재배치")
+
+    def enable_orders(self):
+        """주문 활성화 (텔레그램에서 시작 버튼 클릭 시)"""
+        self._orders_enabled = True
+        self._force_rebalance_requested = True  # 즉시 주문 배치
+        logger.info("★ 주문 활성화됨 - 주문 배치 시작")
+
+    def disable_orders(self):
+        """주문 비활성화 및 기존 주문 취소 (텔레그램에서 정지 버튼 클릭 시)"""
+        self._orders_enabled = False
+        logger.info("★ 주문 비활성화됨 - 기존 주문 취소 예정")
+
+    def is_orders_enabled(self) -> bool:
+        """주문 활성화 상태 확인"""
+        return self._orders_enabled
 
     def _check_escalation_reset(self):
         """단계 리셋 확인 (30분간 체결 없으면 1단계로)"""
@@ -1202,6 +1220,28 @@ class MakerFarmingStrategy:
                 else:
                     # 단계 리셋 체크 (30분간 체결 없으면 1단계로)
                     self._check_escalation_reset()
+
+                    # ★ 주문 비활성화 상태면 모든 주문 취소 후 대기
+                    if not self._orders_enabled:
+                        # 기존 주문이 있으면 모두 취소
+                        has_orders = False
+                        for symbol in symbols:
+                            state = self._symbol_states.get(symbol)
+                            if state:
+                                active_orders = state.get_active_buy_count() + state.get_active_sell_count()
+                                if active_orders > 0:
+                                    has_orders = True
+                                    break
+
+                        if has_orders:
+                            logger.info("[주문정지] 모든 기존 주문 취소 중...")
+                            for symbol in symbols:
+                                await self.order_manager.cancel_all(symbol)
+                            logger.info("[주문정지] 주문 취소 완료 - 대기 모드")
+
+                        # 대기 상태에서는 주문 없이 계속 모니터링만
+                        await asyncio.sleep(check_interval)
+                        continue
 
                     # ★ 강제 재배치 요청 처리 (텔레그램에서 설정 변경 시)
                     if self._force_rebalance_requested:

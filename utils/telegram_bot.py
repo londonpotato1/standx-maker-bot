@@ -66,6 +66,9 @@ class TelegramBot:
         self._set_strategy: Optional[Callable] = None
         self._set_distances: Optional[Callable] = None
         self._set_protection: Optional[Callable] = None
+        self._enable_orders: Optional[Callable] = None
+        self._disable_orders: Optional[Callable] = None
+        self._is_orders_enabled: Optional[Callable] = None
 
         # 상태 리포트 주기 (초), 0이면 비활성화
         self._report_interval: float = 300.0
@@ -85,6 +88,9 @@ class TelegramBot:
         set_strategy: Callable = None,
         set_distances: Callable = None,
         set_protection: Callable = None,
+        enable_orders: Callable = None,
+        disable_orders: Callable = None,
+        is_orders_enabled: Callable = None,
     ):
         """콜백 함수 설정"""
         self._on_stop = on_stop
@@ -100,6 +106,9 @@ class TelegramBot:
         self._set_strategy = set_strategy
         self._set_distances = set_distances
         self._set_protection = set_protection
+        self._enable_orders = enable_orders
+        self._disable_orders = disable_orders
+        self._is_orders_enabled = is_orders_enabled
 
     def get_report_interval(self) -> float:
         """현재 리포트 주기 반환"""
@@ -132,21 +141,35 @@ class TelegramBot:
 
     def _get_main_menu_keyboard(self):
         """메인 메뉴 인라인 키보드"""
+        # 주문 상태에 따라 버튼 텍스트 변경
+        orders_enabled = False
+        if self._is_orders_enabled:
+            try:
+                orders_enabled = self._is_orders_enabled()
+            except:
+                pass
+
+        if orders_enabled:
+            order_btn = {"text": "⏸️ 주문 정지", "callback_data": "orders_disable"}
+        else:
+            order_btn = {"text": "▶️ 주문 시작", "callback_data": "orders_enable"}
+
         return {
             "inline_keyboard": [
                 [
+                    order_btn,
                     {"text": "📊 상태", "callback_data": "status"},
-                    {"text": "📈 통계", "callback_data": "stats"},
                     {"text": "💰 잔고", "callback_data": "balance"},
                 ],
                 [
+                    {"text": "📈 통계", "callback_data": "stats"},
                     {"text": "📋 포지션", "callback_data": "positions"},
-                    {"text": "⚙️ 설정", "callback_data": "settings_menu"},
                     {"text": "📐 주문크기", "callback_data": "setsize_menu"},
                 ],
                 [
-                    {"text": "🛑 봇 중지", "callback_data": "stop"},
+                    {"text": "⚙️ 설정", "callback_data": "settings_menu"},
                     {"text": "❌ 포지션 청산", "callback_data": "closeall_confirm"},
+                    {"text": "🛑 봇 종료", "callback_data": "stop"},
                 ],
             ]
         }
@@ -459,6 +482,37 @@ class TelegramBot:
 
         elif callback_data == 'stop':
             await self._handle_command('/stop')
+
+        # ========== 주문 시작/정지 ==========
+        elif callback_data == 'orders_enable':
+            if self._enable_orders:
+                try:
+                    self._enable_orders()
+                    self.send_message(
+                        "✅ <b>주문 시작됨</b>\n\n"
+                        "주문이 활성화되었습니다.\n"
+                        "잠시 후 주문이 배치됩니다.",
+                        reply_markup=self._get_main_menu_keyboard()
+                    )
+                except Exception as e:
+                    self.send_message(f"❌ 주문 시작 실패: {e}", reply_markup=self._get_main_menu_keyboard())
+            else:
+                self.send_message("❌ 주문 시작 기능이 설정되지 않았습니다.", reply_markup=self._get_main_menu_keyboard())
+
+        elif callback_data == 'orders_disable':
+            if self._disable_orders:
+                try:
+                    self._disable_orders()
+                    self.send_message(
+                        "⏸️ <b>주문 정지됨</b>\n\n"
+                        "주문이 비활성화되었습니다.\n"
+                        "기존 주문이 취소됩니다.",
+                        reply_markup=self._get_main_menu_keyboard()
+                    )
+                except Exception as e:
+                    self.send_message(f"❌ 주문 정지 실패: {e}", reply_markup=self._get_main_menu_keyboard())
+            else:
+                self.send_message("❌ 주문 정지 기능이 설정되지 않았습니다.", reply_markup=self._get_main_menu_keyboard())
 
         elif callback_data == 'closeall_confirm':
             # 청산 확인 메시지
