@@ -195,7 +195,12 @@ class TelegramBot:
             # 연속 체결 보호 상태 표시
             if status.get('consecutive_fill_paused'):
                 remaining = status.get('consecutive_fill_pause_remaining', 0)
-                msg += f"\n🛑 <b>연속체결 일시정지:</b> {remaining:.0f}초 남음\n"
+                level = status.get('consecutive_fill_escalation_level', 1)
+                if remaining >= 3600:
+                    remaining_str = f"{remaining / 3600:.1f}시간"
+                else:
+                    remaining_str = f"{remaining / 60:.0f}분"
+                msg += f"\n🛑 <b>연속체결 {level}단계 일시정지:</b> {remaining_str} 남음\n"
 
             # 연속 체결 정지 횟수 표시
             pause_count = stats.get('consecutive_fill_pauses', 0)
@@ -576,18 +581,8 @@ class TelegramBot:
             else:
                 self.send_message("❌ 중지 기능이 설정되지 않았습니다.", reply_markup=self._get_back_to_menu_keyboard())
 
-        elif command == '/start':
-            if self._on_start:
-                self.send_message("🚀 봇 시작 요청 중...")
-                try:
-                    await self._on_start()
-                    self.send_message("✅ 봇이 시작되었습니다.", reply_markup=self._get_back_to_menu_keyboard())
-                except Exception as e:
-                    self.send_message(f"❌ 봇 시작 실패: {e}", reply_markup=self._get_back_to_menu_keyboard())
-            else:
-                self.send_message("❌ 시작 기능이 설정되지 않았습니다.", reply_markup=self._get_back_to_menu_keyboard())
-
-        elif command == '/help' or command == '/menu':
+        elif command == '/start' or command == '/help' or command == '/menu':
+            # /start, /help, /menu 모두 메인 메뉴 표시
             self.send_main_menu()
 
         else:

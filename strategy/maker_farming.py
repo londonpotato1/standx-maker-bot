@@ -216,6 +216,8 @@ class MakerFarmingStrategy:
         # 연속 체결 보호 상태
         self._fill_timestamps: List[float] = []  # 체결 시각 리스트
         self._consecutive_fill_pause_until: float = 0  # 일시 정지 종료 시각
+        self._consecutive_fill_escalation_level: int = 0  # 단계 (0=정상, 1=5분정지 후 재개, 2+=1시간정지)
+        self._last_pause_end_time: float = 0  # 마지막 정지 종료 시각 (단계 리셋용)
 
         # 콜백 등록
         self.safety_guard.on_safety_event(self._on_safety_event)
@@ -238,9 +240,11 @@ class MakerFarmingStrategy:
 
     def _check_consecutive_fills(self):
         """
-        연속 체결 검사 및 자동 일시 정지
+        연속 체결 검사 및 자동 일시 정지 (단계적 강화)
 
-        윈도우 내 체결 횟수가 max_fills 초과 시 자동 정지
+        - 1단계: 1분 내 3회 체결 → 5분 정지
+        - 2단계: 재개 후 또 3회 체결 → 1시간 정지
+        - 30분간 체결 없으면 1단계로 리셋
         """
         cfp = self.config.consecutive_fill_protection
         if not cfp.enabled:
@@ -259,13 +263,30 @@ class MakerFarmingStrategy:
         fill_count = len(self._fill_timestamps)
 
         if fill_count >= cfp.max_fills:
+            # 단계적 정지 시간 결정
+            if self._consecutive_fill_escalation_level >= 1:
+                # 2단계 이상: 1시간 정지
+                pause_duration = cfp.escalated_pause_duration_seconds
+                level_str = "2단계"
+            else:
+                # 1단계: 5분 정지
+                pause_duration = cfp.pause_duration_seconds
+                level_str = "1단계"
+
             # 자동 일시 정지 활성화
-            self._consecutive_fill_pause_until = now + cfp.pause_duration_seconds
+            self._consecutive_fill_pause_until = now + pause_duration
+            self._consecutive_fill_escalation_level += 1
             self._stats.consecutive_fill_pauses += 1
+
+            # 사람이 읽기 쉬운 시간 표시
+            if pause_duration >= 3600:
+                duration_str = f"{pause_duration / 3600:.1f}시간"
+            else:
+                duration_str = f"{pause_duration / 60:.0f}분"
 
             logger.critical(
                 f"★★★ 연속 체결 감지! {fill_count}회/{cfp.window_seconds}초 → "
-                f"{cfp.pause_duration_seconds}초 일시 정지 ★★★"
+                f"{level_str} {duration_str} 일시 정지 ★★★"
             )
 
             # 체결 기록 초기화 (정지 후 재시작 시 새로 카운트)
@@ -273,11 +294,41 @@ class MakerFarmingStrategy:
 
     def is_consecutive_fill_paused(self) -> bool:
         """연속 체결로 인한 일시 정지 상태인지"""
-        return time.time() < self._consecutive_fill_pause_until
+        now = time.time()
+        is_paused = now < self._consecutive_fill_pause_until
+
+        # 정지 종료 시점 기록 (단계 리셋용)
+        if not is_paused and self._consecutive_fill_pause_until > 0:
+            if self._last_pause_end_time < self._consecutive_fill_pause_until:
+                self._last_pause_end_time = now
+                logger.info(f"[연속체결보호] 정지 종료 - 현재 단계: {self._consecutive_fill_escalation_level}")
+
+        return is_paused
 
     def get_consecutive_fill_pause_remaining(self) -> float:
         """연속 체결 일시 정지 남은 시간 (초)"""
         return max(0, self._consecutive_fill_pause_until - time.time())
+
+    def _check_escalation_reset(self):
+        """단계 리셋 확인 (30분간 체결 없으면 1단계로)"""
+        cfp = self.config.consecutive_fill_protection
+        if not cfp.enabled:
+            return
+
+        now = time.time()
+
+        # 정지 중이 아니고, 마지막 정지 종료 후 리셋 시간이 지났으면
+        if (not self.is_consecutive_fill_paused() and
+            self._consecutive_fill_escalation_level > 0 and
+            self._last_pause_end_time > 0 and
+            now - self._last_pause_end_time >= cfp.escalation_reset_seconds):
+
+            logger.info(
+                f"[연속체결보호] 단계 리셋: {self._consecutive_fill_escalation_level} → 0 "
+                f"({cfp.escalation_reset_seconds / 60:.0f}분간 체결 없음)"
+            )
+            self._consecutive_fill_escalation_level = 0
+            self._last_pause_end_time = 0
 
     def _on_order_update(self, order: ManagedOrder):
         """주문 업데이트 처리"""
@@ -1113,9 +1164,12 @@ class MakerFarmingStrategy:
                     remaining = self.get_consecutive_fill_pause_remaining()
                     # 10초마다 로깅
                     if int(remaining) % 10 == 0 and int(remaining) > 0:
-                        logger.warning(f"[연속체결보호] 일시 정지 중... {remaining:.0f}초 남음")
+                        level = self._consecutive_fill_escalation_level
+                        logger.warning(f"[연속체결보호] {level}단계 일시 정지 중... {remaining:.0f}초 남음")
 
                 else:
+                    # 단계 리셋 체크 (30분간 체결 없으면 1단계로)
+                    self._check_escalation_reset()
                     for symbol in symbols:
                         # 재배치 필요 여부 확인 (Band 상태 기반)
                         needs_rebalance, reason = await self._check_rebalance(symbol)
@@ -1253,6 +1307,7 @@ class MakerFarmingStrategy:
             'held_position': held_pos_info,
             'consecutive_fill_paused': self.is_consecutive_fill_paused(),
             'consecutive_fill_pause_remaining': self.get_consecutive_fill_pause_remaining(),
+            'consecutive_fill_escalation_level': self._consecutive_fill_escalation_level,
             'runtime_seconds': runtime,
             'runtime_hours': runtime / 3600,
             'symbols': {},

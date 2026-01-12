@@ -143,7 +143,9 @@ class ConsecutiveFillProtectionConfig:
     enabled: bool = True
     window_seconds: float = 60.0  # 체결 감지 윈도우 (초)
     max_fills: int = 3  # 최대 허용 체결 횟수
-    pause_duration_seconds: float = 300.0  # 자동 정지 시간 (초)
+    pause_duration_seconds: float = 300.0  # 1단계 자동 정지 시간 (초) - 5분
+    escalated_pause_duration_seconds: float = 3600.0  # 2단계 자동 정지 시간 (초) - 1시간
+    escalation_reset_seconds: float = 1800.0  # 단계 리셋 시간 (초) - 30분
 
 
 @dataclass
@@ -335,6 +337,8 @@ class Config:
                 window_seconds=float(cfp.get('window_seconds', 60.0)),
                 max_fills=int(cfp.get('max_fills', 3)),
                 pause_duration_seconds=float(cfp.get('pause_duration_seconds', 300.0)),
+                escalated_pause_duration_seconds=float(cfp.get('escalated_pause_duration_seconds', 3600.0)),
+                escalation_reset_seconds=float(cfp.get('escalation_reset_seconds', 1800.0)),
             )
 
         # Telegram 설정 (환경변수 우선)

@@ -100,14 +100,19 @@ safety:
 
 # 연속 체결 보호 설정 (Consecutive Fill Protection)
 # 단시간에 여러 번 체결되면 자동으로 일시 정지
+# 단계적 강화: 재개 후에도 또 발생하면 더 긴 시간 정지
 consecutive_fill_protection:
   enabled: true
   # 체결 감지 윈도우 (초) - 이 시간 내 체결 횟수 카운트
   window_seconds: 60
   # 최대 허용 체결 횟수 - 초과 시 자동 정지
   max_fills: 3
-  # 자동 정지 시간 (초) - 이 시간 후 자동 재개
+  # 1단계 자동 정지 시간 (초) - 5분
   pause_duration_seconds: 300
+  # 2단계 자동 정지 시간 (초) - 재개 후 또 발생 시 1시간
+  escalated_pause_duration_seconds: 3600
+  # 단계 리셋 시간 (초) - 이 시간 동안 체결 없으면 1단계로 리셋
+  escalation_reset_seconds: 1800
 
 # 체결 방지 보호 설정 (Fill Protection)
 # Binance mark price 선행 감지 + 오더북 큐 프로텍션
