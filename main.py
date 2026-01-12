@@ -20,6 +20,7 @@ if project_root.name == '03_Claude':
     from standx_maker_bot.strategy.maker_farming import MakerFarmingStrategy
     from standx_maker_bot.utils.config import Config
     from standx_maker_bot.utils.logger import setup_logger, get_logger
+    from standx_maker_bot.utils.telegram_bot import TelegramBot, TelegramConfig
 else:
     # Railway 등 클라우드 배포 환경 (프로젝트 폴더가 루트)
     from api.auth import StandXAuth
@@ -28,6 +29,7 @@ else:
     from strategy.maker_farming import MakerFarmingStrategy
     from utils.config import Config
     from utils.logger import setup_logger, get_logger
+    from utils.telegram_bot import TelegramBot, TelegramConfig
 
 
 def print_banner():
@@ -85,9 +87,23 @@ async def status_printer(strategy: MakerFarmingStrategy, interval: float = 30.0)
             break
 
 
+async def telegram_status_reporter(telegram_bot: TelegramBot, strategy: MakerFarmingStrategy, interval: float = 300.0):
+    """텔레그램으로 주기적 상태 리포트 (기본 5분)"""
+    while True:
+        try:
+            await asyncio.sleep(interval)
+            status = strategy.get_status()
+            telegram_bot.send_status_report(status)
+        except asyncio.CancelledError:
+            break
+        except Exception as e:
+            logger.error(f"텔레그램 상태 리포트 실패: {e}")
+
+
 async def main_async(config_path: str, dry_run: bool = False, order_size: float = None):
     """비동기 메인 함수"""
     logger = get_logger('main')
+    telegram_bot = None
 
     # 설정 로드
     logger.info("설정 로드 중...")
@@ -149,6 +165,17 @@ async def main_async(config_path: str, dry_run: bool = False, order_size: float 
     # 전략 초기화
     strategy = MakerFarmingStrategy(config, rest_client, ws_client)
 
+    # 텔레그램 봇 초기화
+    telegram_bot = None
+    if config.telegram.enabled and config.telegram.bot_token and config.telegram.chat_id:
+        telegram_config = TelegramConfig(
+            bot_token=config.telegram.bot_token,
+            chat_id=config.telegram.chat_id,
+            enabled=True,
+        )
+        telegram_bot = TelegramBot(telegram_config)
+        logger.info("텔레그램 봇 활성화됨")
+
     # 시그널 핸들러
     loop = asyncio.get_event_loop()
     stop_event = asyncio.Event()
@@ -168,6 +195,30 @@ async def main_async(config_path: str, dry_run: bool = False, order_size: float 
     try:
         await strategy.start()
 
+        # 텔레그램 봇 시작
+        telegram_report_task = None
+        if telegram_bot:
+            # 콜백 설정
+            async def on_stop():
+                stop_event.set()
+
+            async def on_start():
+                # 이미 실행 중이면 무시
+                pass
+
+            telegram_bot.set_callbacks(
+                on_stop=on_stop,
+                on_start=on_start,
+                get_status=strategy.get_status,
+                get_stats=lambda: strategy.get_status()['stats'],
+            )
+            await telegram_bot.start()
+
+            # 텔레그램 상태 리포트 태스크 (5분마다)
+            telegram_report_task = asyncio.create_task(
+                telegram_status_reporter(telegram_bot, strategy, 300)
+            )
+
         # 상태 출력 태스크
         status_task = asyncio.create_task(status_printer(strategy, 30))
 
@@ -183,6 +234,8 @@ async def main_async(config_path: str, dry_run: bool = False, order_size: float 
         # 정리
         status_task.cancel()
         run_task.cancel()
+        if telegram_report_task:
+            telegram_report_task.cancel()
 
         try:
             await status_task
@@ -194,12 +247,31 @@ async def main_async(config_path: str, dry_run: bool = False, order_size: float 
         except asyncio.CancelledError:
             pass
 
+        if telegram_report_task:
+            try:
+                await telegram_report_task
+            except asyncio.CancelledError:
+                pass
+
     except KeyboardInterrupt:
         logger.info("키보드 인터럽트")
+
+    except Exception as e:
+        # 예상치 못한 오류 - 텔레그램으로 알림
+        logger.error(f"예상치 못한 오류: {e}")
+        if telegram_bot:
+            import traceback
+            telegram_bot.send_error_message(str(e), traceback.format_exc())
+        raise
 
     finally:
         # 전략 종료
         await strategy.stop()
+
+        # 텔레그램 봇 종료
+        if telegram_bot:
+            telegram_bot.send_shutdown_message("정상 종료")
+            await telegram_bot.stop()
 
         # 최종 상태 출력
         print_status(strategy)
