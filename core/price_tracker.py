@@ -10,9 +10,14 @@ from collections import deque
 from dataclasses import dataclass, field
 from typing import Callable, Dict, List, Optional, Deque, Tuple
 
-from ..api.websocket_client import StandXWebSocket, PriceData, OrderbookData
-from ..api.rest_client import StandXRestClient
-from ..utils.logger import get_logger
+try:
+    from api.websocket_client import StandXWebSocket, PriceData, OrderbookData
+    from api.rest_client import StandXRestClient
+    from utils.logger import get_logger
+except ImportError:
+    from standx_maker_bot.api.websocket_client import StandXWebSocket, PriceData, OrderbookData
+    from standx_maker_bot.api.rest_client import StandXRestClient
+    from standx_maker_bot.utils.logger import get_logger
 
 logger = get_logger('price_tracker')
 

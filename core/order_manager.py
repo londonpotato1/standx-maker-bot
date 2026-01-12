@@ -10,15 +10,26 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Callable, Dict, List, Optional
 
-from ..api.rest_client import (
-    StandXRestClient,
-    Order,
-    OrderSide,
-    OrderType,
-    TimeInForce,
-    MarginMode,
-)
-from ..utils.logger import get_logger
+try:
+    from api.rest_client import (
+        StandXRestClient,
+        Order,
+        OrderSide,
+        OrderType,
+        TimeInForce,
+        MarginMode,
+    )
+    from utils.logger import get_logger
+except ImportError:
+    from standx_maker_bot.api.rest_client import (
+        StandXRestClient,
+        Order,
+        OrderSide,
+        OrderType,
+        TimeInForce,
+        MarginMode,
+    )
+    from standx_maker_bot.utils.logger import get_logger
 
 logger = get_logger('order_manager')
 

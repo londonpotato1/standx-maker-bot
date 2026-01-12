@@ -11,10 +11,16 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Callable, List, Optional, Dict, Tuple
 
-from ..api.rest_client import StandXRestClient, OrderSide
-from .price_tracker import PriceTracker
-from .order_manager import OrderManager, ManagedOrder
-from ..utils.logger import get_logger
+try:
+    from api.rest_client import StandXRestClient, OrderSide
+    from core.price_tracker import PriceTracker
+    from core.order_manager import OrderManager, ManagedOrder
+    from utils.logger import get_logger
+except ImportError:
+    from standx_maker_bot.api.rest_client import StandXRestClient, OrderSide
+    from standx_maker_bot.core.price_tracker import PriceTracker
+    from standx_maker_bot.core.order_manager import OrderManager, ManagedOrder
+    from standx_maker_bot.utils.logger import get_logger
 
 logger = get_logger('safety_guard')
 

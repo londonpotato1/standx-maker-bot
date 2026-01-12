@@ -12,12 +12,20 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Callable, Deque, Dict, List, Optional
 
-from ..api.binance_ws_client import BinanceWebSocket, BinanceMarkPrice
-from ..api.websocket_client import StandXWebSocket, OrderbookData
-from .order_manager import OrderManager, ManagedOrder
-from .safety_guard import SafetyGuard
-from ..api.rest_client import OrderSide
-from ..utils.logger import get_logger
+try:
+    from api.binance_ws_client import BinanceWebSocket, BinanceMarkPrice
+    from api.websocket_client import StandXWebSocket, OrderbookData
+    from core.order_manager import OrderManager, ManagedOrder
+    from core.safety_guard import SafetyGuard
+    from api.rest_client import OrderSide
+    from utils.logger import get_logger
+except ImportError:
+    from standx_maker_bot.api.binance_ws_client import BinanceWebSocket, BinanceMarkPrice
+    from standx_maker_bot.api.websocket_client import StandXWebSocket, OrderbookData
+    from standx_maker_bot.core.order_manager import OrderManager, ManagedOrder
+    from standx_maker_bot.core.safety_guard import SafetyGuard
+    from standx_maker_bot.api.rest_client import OrderSide
+    from standx_maker_bot.utils.logger import get_logger
 
 logger = get_logger('fill_protection')
 

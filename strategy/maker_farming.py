@@ -10,22 +10,40 @@ import time
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple
 
-from ..api.rest_client import StandXRestClient, OrderSide
-from ..api.websocket_client import StandXWebSocket
-from ..api.binance_ws_client import BinanceWebSocket
-from ..core.price_tracker import PriceTracker
-from ..core.band_calculator import BandCalculator, Band
-from ..core.order_manager import OrderManager, ManagedOrder, ManagedOrderStatus
-from ..core.safety_guard import SafetyGuard, SafetyConfig, SafetyAction, SafetyEvent, PreKillConfig, HardKillConfig
-from ..core.fill_protection import (
-    FillProtection,
-    FillProtectionConfig as FillProtectionCoreConfig,
-    BinanceProtectionConfig as BinanceProtectionCoreConfig,
-    QueueProtectionConfig as QueueProtectionCoreConfig,
-    ProtectionEvent,
-)
-from ..utils.config import Config, StrategyConfig
-from ..utils.logger import get_logger
+try:
+    from api.rest_client import StandXRestClient, OrderSide
+    from api.websocket_client import StandXWebSocket
+    from api.binance_ws_client import BinanceWebSocket
+    from core.price_tracker import PriceTracker
+    from core.band_calculator import BandCalculator, Band
+    from core.order_manager import OrderManager, ManagedOrder, ManagedOrderStatus
+    from core.safety_guard import SafetyGuard, SafetyConfig, SafetyAction, SafetyEvent, PreKillConfig, HardKillConfig
+    from core.fill_protection import (
+        FillProtection,
+        FillProtectionConfig as FillProtectionCoreConfig,
+        BinanceProtectionConfig as BinanceProtectionCoreConfig,
+        QueueProtectionConfig as QueueProtectionCoreConfig,
+        ProtectionEvent,
+    )
+    from utils.config import Config, StrategyConfig
+    from utils.logger import get_logger
+except ImportError:
+    from standx_maker_bot.api.rest_client import StandXRestClient, OrderSide
+    from standx_maker_bot.api.websocket_client import StandXWebSocket
+    from standx_maker_bot.api.binance_ws_client import BinanceWebSocket
+    from standx_maker_bot.core.price_tracker import PriceTracker
+    from standx_maker_bot.core.band_calculator import BandCalculator, Band
+    from standx_maker_bot.core.order_manager import OrderManager, ManagedOrder, ManagedOrderStatus
+    from standx_maker_bot.core.safety_guard import SafetyGuard, SafetyConfig, SafetyAction, SafetyEvent, PreKillConfig, HardKillConfig
+    from standx_maker_bot.core.fill_protection import (
+        FillProtection,
+        FillProtectionConfig as FillProtectionCoreConfig,
+        BinanceProtectionConfig as BinanceProtectionCoreConfig,
+        QueueProtectionConfig as QueueProtectionCoreConfig,
+        ProtectionEvent,
+    )
+    from standx_maker_bot.utils.config import Config, StrategyConfig
+    from standx_maker_bot.utils.logger import get_logger
 
 logger = get_logger('maker_farming')
 

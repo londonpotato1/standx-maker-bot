@@ -19,7 +19,10 @@ from nacl.signing import SigningKey
 from eth_account import Account
 from eth_account.messages import encode_defunct
 
-from ..utils.logger import get_logger
+try:
+    from utils.logger import get_logger
+except ImportError:
+    from standx_maker_bot.utils.logger import get_logger
 
 logger = get_logger('auth')
 

@@ -11,8 +11,12 @@ from typing import Any, Callable, Dict, List, Optional, Set
 import websockets
 from websockets.client import WebSocketClientProtocol
 
-from .auth import StandXAuth
-from ..utils.logger import get_logger
+try:
+    from api.auth import StandXAuth
+    from utils.logger import get_logger
+except ImportError:
+    from standx_maker_bot.api.auth import StandXAuth
+    from standx_maker_bot.utils.logger import get_logger
 
 logger = get_logger('websocket')
 

@@ -9,8 +9,12 @@ from typing import Any, Dict, List, Optional
 
 import requests
 
-from .auth import StandXAuth
-from ..utils.logger import get_logger
+try:
+    from api.auth import StandXAuth
+    from utils.logger import get_logger
+except ImportError:
+    from standx_maker_bot.api.auth import StandXAuth
+    from standx_maker_bot.utils.logger import get_logger
 
 logger = get_logger('rest_client')
 

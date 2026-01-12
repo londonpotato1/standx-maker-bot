@@ -13,7 +13,10 @@ from typing import Callable, Deque, Dict, List, Optional
 import websockets
 from websockets.client import WebSocketClientProtocol
 
-from ..utils.logger import get_logger
+try:
+    from utils.logger import get_logger
+except ImportError:
+    from standx_maker_bot.utils.logger import get_logger
 
 logger = get_logger('binance_ws')
 

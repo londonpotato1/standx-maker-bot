@@ -8,7 +8,10 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Optional, Tuple
 
-from ..utils.logger import get_logger
+try:
+    from utils.logger import get_logger
+except ImportError:
+    from standx_maker_bot.utils.logger import get_logger
 
 logger = get_logger('band_calculator')
 
