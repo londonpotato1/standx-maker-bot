@@ -87,10 +87,17 @@ async def status_printer(strategy: MakerFarmingStrategy, interval: float = 30.0)
             break
 
 
-async def telegram_status_reporter(telegram_bot: TelegramBot, strategy: MakerFarmingStrategy, interval: float = 300.0):
-    """텔레그램으로 주기적 상태 리포트 (기본 5분)"""
+async def telegram_status_reporter(telegram_bot: TelegramBot, strategy: MakerFarmingStrategy):
+    """텔레그램으로 주기적 상태 리포트 (텔레그램 봇 설정 주기 사용)"""
     while True:
         try:
+            # 텔레그램 봇의 리포트 주기 사용 (동적 변경 지원)
+            interval = telegram_bot.get_report_interval()
+            if interval <= 0:
+                # 리포트 비활성화 상태 - 1분마다 체크
+                await asyncio.sleep(60)
+                continue
+
             await asyncio.sleep(interval)
             status = strategy.get_status()
             telegram_bot.send_status_report(status, with_menu=False)  # 자동 리포트는 메뉴 버튼 없이
@@ -243,20 +250,115 @@ async def main_async(config_path: str, dry_run: bool = False, order_size: float 
                     },
                 }
 
-            def set_order_size(new_size: float):
-                """주문 크기 변경"""
+            def set_order_size(new_size: float, force_rebalance: bool = True):
+                """주문 크기 변경 및 즉시 재배치"""
                 try:
                     old_size = config.strategy.order_size_usd
                     config.strategy.order_size_usd = new_size
                     logger.info(f"주문 크기 변경: ${old_size} -> ${new_size}")
+
+                    # 즉시 재배치 요청 (기존 주문 취소 후 새 크기로 재배치)
+                    if force_rebalance:
+                        strategy.request_force_rebalance()
+                        logger.info("강제 재배치 요청됨")
+
                     return {
                         'success': True,
                         'old_size': old_size,
                         'new_size': new_size,
                         'leverage': config.strategy.leverage,
+                        'rebalanced': force_rebalance,
                     }
                 except Exception as e:
                     logger.error(f"주문 크기 변경 실패: {e}")
+                    return {'success': False, 'error': str(e)}
+
+            def set_leverage(new_leverage: int):
+                """레버리지 변경"""
+                try:
+                    old_leverage = config.strategy.leverage
+                    config.strategy.leverage = new_leverage
+                    logger.info(f"레버리지 변경: {old_leverage}x -> {new_leverage}x")
+                    return {
+                        'success': True,
+                        'old_leverage': old_leverage,
+                        'new_leverage': new_leverage,
+                    }
+                except Exception as e:
+                    logger.error(f"레버리지 변경 실패: {e}")
+                    return {'success': False, 'error': str(e)}
+
+            def set_strategy(num_orders: int):
+                """전략 변경 (1+1 또는 2+2)"""
+                try:
+                    old_num = config.strategy.num_orders_per_side
+                    config.strategy.num_orders_per_side = num_orders
+
+                    # 주문 거리도 조정
+                    if num_orders == 1:
+                        config.strategy.order_distances_bps = [8.0]
+                    else:
+                        config.strategy.order_distances_bps = [7.5, 8.5]
+
+                    logger.info(f"전략 변경: {old_num}+{old_num} -> {num_orders}+{num_orders}")
+                    strategy.request_force_rebalance()
+
+                    return {
+                        'success': True,
+                        'old_strategy': f"{old_num}+{old_num}",
+                        'new_strategy': f"{num_orders}+{num_orders}",
+                    }
+                except Exception as e:
+                    logger.error(f"전략 변경 실패: {e}")
+                    return {'success': False, 'error': str(e)}
+
+            def set_distances(preset: str):
+                """주문 거리 프리셋 변경"""
+                try:
+                    presets = {
+                        'conservative': [8.0, 9.0],  # 보수적
+                        'standard': [7.5, 8.5],      # 표준
+                        'aggressive': [6.0, 7.5],    # 공격적
+                    }
+
+                    if preset not in presets:
+                        return {'success': False, 'error': f'알 수 없는 프리셋: {preset}'}
+
+                    old_distances = config.strategy.order_distances_bps
+                    new_distances = presets[preset]
+
+                    # 1+1 전략이면 첫 번째 거리만 사용
+                    if config.strategy.num_orders_per_side == 1:
+                        new_distances = [new_distances[0]]
+
+                    config.strategy.order_distances_bps = new_distances
+                    logger.info(f"주문 거리 변경: {old_distances} -> {new_distances} ({preset})")
+                    strategy.request_force_rebalance()
+
+                    return {
+                        'success': True,
+                        'old_distances': old_distances,
+                        'new_distances': new_distances,
+                        'preset': preset,
+                    }
+                except Exception as e:
+                    logger.error(f"주문 거리 변경 실패: {e}")
+                    return {'success': False, 'error': str(e)}
+
+            def set_protection(enabled: bool):
+                """연속 체결 보호 On/Off"""
+                try:
+                    old_enabled = config.consecutive_fill_protection.enabled
+                    config.consecutive_fill_protection.enabled = enabled
+                    logger.info(f"연속 체결 보호: {'ON' if enabled else 'OFF'}")
+                    return {
+                        'success': True,
+                        'old_enabled': old_enabled,
+                        'new_enabled': enabled,
+                    }
+                except Exception as e:
+                    logger.error(f"연속 체결 보호 설정 실패: {e}")
+                    return {'success': False, 'error': str(e)}
 
             def get_positions():
                 """현재 포지션 목록 반환"""
@@ -338,12 +440,16 @@ async def main_async(config_path: str, dry_run: bool = False, order_size: float 
                 set_order_size=set_order_size,
                 get_positions=get_positions,
                 close_all_positions=close_all_positions,
+                set_leverage=set_leverage,
+                set_strategy=set_strategy,
+                set_distances=set_distances,
+                set_protection=set_protection,
             )
             await telegram_bot.start()
 
-            # 텔레그램 상태 리포트 태스크 (5분마다)
+            # 텔레그램 상태 리포트 태스크 (기본 5분, 동적 변경 지원)
             telegram_report_task = asyncio.create_task(
-                telegram_status_reporter(telegram_bot, strategy, 300)
+                telegram_status_reporter(telegram_bot, strategy)
             )
 
         # 상태 출력 태스크

@@ -222,6 +222,9 @@ class MakerFarmingStrategy:
         self._consecutive_fill_escalation_level: int = 0  # 단계 (0=정상, 1=5분정지 후 재개, 2+=1시간정지)
         self._last_pause_end_time: float = 0  # 마지막 정지 종료 시각 (단계 리셋용)
 
+        # 강제 재배치 요청 플래그
+        self._force_rebalance_requested: bool = False
+
         # 콜백 등록
         self.safety_guard.on_safety_event(self._on_safety_event)
         self.order_manager.on_order_update(self._on_order_update)
@@ -311,6 +314,16 @@ class MakerFarmingStrategy:
     def get_consecutive_fill_pause_remaining(self) -> float:
         """연속 체결 일시 정지 남은 시간 (초)"""
         return max(0, self._consecutive_fill_pause_until - time.time())
+
+    def request_force_rebalance(self):
+        """
+        강제 재배치 요청
+
+        텔레그램에서 주문 크기/전략/거리 변경 시 호출됨.
+        다음 루프에서 모든 기존 주문을 취소하고 새 설정으로 재배치함.
+        """
+        self._force_rebalance_requested = True
+        logger.info("[강제재배치] 요청됨 - 다음 루프에서 모든 주문 재배치")
 
     def _check_escalation_reset(self):
         """단계 리셋 확인 (30분간 체결 없으면 1단계로)"""
@@ -1195,6 +1208,17 @@ class MakerFarmingStrategy:
                 else:
                     # 단계 리셋 체크 (30분간 체결 없으면 1단계로)
                     self._check_escalation_reset()
+
+                    # ★ 강제 재배치 요청 처리 (텔레그램에서 설정 변경 시)
+                    if self._force_rebalance_requested:
+                        self._force_rebalance_requested = False
+                        logger.info("[강제재배치] 모든 심볼 주문 재배치 시작")
+                        # 주문 크기 재계산
+                        await self._calculate_effective_order_size()
+                        for symbol in symbols:
+                            await self._rebalance(symbol, "강제 재배치 (설정 변경)")
+                        continue
+
                     for symbol in symbols:
                         # 재배치 필요 여부 확인 (Band 상태 기반)
                         needs_rebalance, reason = await self._check_rebalance(symbol)

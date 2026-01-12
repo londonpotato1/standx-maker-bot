@@ -62,6 +62,13 @@ class TelegramBot:
         self._set_order_size: Optional[Callable] = None
         self._close_all_positions: Optional[Callable] = None
         self._get_positions: Optional[Callable] = None
+        self._set_leverage: Optional[Callable] = None
+        self._set_strategy: Optional[Callable] = None
+        self._set_distances: Optional[Callable] = None
+        self._set_protection: Optional[Callable] = None
+
+        # 상태 리포트 주기 (초), 0이면 비활성화
+        self._report_interval: float = 300.0
 
     def set_callbacks(
         self,
@@ -74,6 +81,10 @@ class TelegramBot:
         set_order_size: Callable = None,
         close_all_positions: Callable = None,
         get_positions: Callable = None,
+        set_leverage: Callable = None,
+        set_strategy: Callable = None,
+        set_distances: Callable = None,
+        set_protection: Callable = None,
     ):
         """콜백 함수 설정"""
         self._on_stop = on_stop
@@ -85,6 +96,18 @@ class TelegramBot:
         self._set_order_size = set_order_size
         self._close_all_positions = close_all_positions
         self._get_positions = get_positions
+        self._set_leverage = set_leverage
+        self._set_strategy = set_strategy
+        self._set_distances = set_distances
+        self._set_protection = set_protection
+
+    def get_report_interval(self) -> float:
+        """현재 리포트 주기 반환"""
+        return self._report_interval
+
+    def set_report_interval(self, interval: float):
+        """리포트 주기 변경"""
+        self._report_interval = interval
 
     def send_message(self, text: str, parse_mode: str = "HTML", reply_markup: dict = None) -> bool:
         """메시지 전송"""
@@ -118,13 +141,101 @@ class TelegramBot:
                 ],
                 [
                     {"text": "📋 포지션", "callback_data": "positions"},
-                    {"text": "⚙️ 설정", "callback_data": "config"},
+                    {"text": "⚙️ 설정", "callback_data": "settings_menu"},
                     {"text": "📐 주문크기", "callback_data": "setsize_menu"},
                 ],
                 [
                     {"text": "🛑 봇 중지", "callback_data": "stop"},
                     {"text": "❌ 포지션 청산", "callback_data": "closeall_confirm"},
                 ],
+            ]
+        }
+
+    def _get_settings_menu_keyboard(self):
+        """설정 메뉴 인라인 키보드"""
+        return {
+            "inline_keyboard": [
+                [
+                    {"text": "📊 레버리지", "callback_data": "settings_leverage"},
+                    {"text": "🎯 전략", "callback_data": "settings_strategy"},
+                ],
+                [
+                    {"text": "📏 주문거리", "callback_data": "settings_distance"},
+                    {"text": "🛡️ 체결보호", "callback_data": "settings_protection"},
+                ],
+                [
+                    {"text": "📱 리포트주기", "callback_data": "settings_report"},
+                ],
+                [{"text": "↩️ 메뉴로 돌아가기", "callback_data": "menu"}],
+            ]
+        }
+
+    def _get_leverage_keyboard(self):
+        """레버리지 선택 키보드"""
+        return {
+            "inline_keyboard": [
+                [
+                    {"text": "10x", "callback_data": "set_leverage_10"},
+                    {"text": "15x", "callback_data": "set_leverage_15"},
+                    {"text": "20x", "callback_data": "set_leverage_20"},
+                ],
+                [{"text": "↩️ 설정으로", "callback_data": "settings_menu"}],
+            ]
+        }
+
+    def _get_strategy_keyboard(self):
+        """전략 선택 키보드"""
+        return {
+            "inline_keyboard": [
+                [
+                    {"text": "1+1 (안전)", "callback_data": "set_strategy_1"},
+                    {"text": "2+2 (표준)", "callback_data": "set_strategy_2"},
+                ],
+                [{"text": "↩️ 설정으로", "callback_data": "settings_menu"}],
+            ]
+        }
+
+    def _get_distance_keyboard(self):
+        """주문 거리 선택 키보드"""
+        return {
+            "inline_keyboard": [
+                [
+                    {"text": "보수적 (8-9bps)", "callback_data": "set_distance_conservative"},
+                    {"text": "표준 (7-8.5bps)", "callback_data": "set_distance_standard"},
+                ],
+                [
+                    {"text": "공격적 (6-7.5bps)", "callback_data": "set_distance_aggressive"},
+                ],
+                [{"text": "↩️ 설정으로", "callback_data": "settings_menu"}],
+            ]
+        }
+
+    def _get_protection_keyboard(self):
+        """체결 보호 설정 키보드"""
+        return {
+            "inline_keyboard": [
+                [
+                    {"text": "✅ 켜기", "callback_data": "set_protection_on"},
+                    {"text": "❌ 끄기", "callback_data": "set_protection_off"},
+                ],
+                [{"text": "↩️ 설정으로", "callback_data": "settings_menu"}],
+            ]
+        }
+
+    def _get_report_interval_keyboard(self):
+        """리포트 주기 선택 키보드"""
+        return {
+            "inline_keyboard": [
+                [
+                    {"text": "1분", "callback_data": "set_report_60"},
+                    {"text": "5분", "callback_data": "set_report_300"},
+                    {"text": "10분", "callback_data": "set_report_600"},
+                ],
+                [
+                    {"text": "30분", "callback_data": "set_report_1800"},
+                    {"text": "끄기", "callback_data": "set_report_0"},
+                ],
+                [{"text": "↩️ 설정으로", "callback_data": "settings_menu"}],
             ]
         }
 
@@ -386,6 +497,41 @@ class TelegramBot:
             # 주문 크기 변경 (30%, 50%, max)
             await self._handle_setsize_callback(callback_data)
 
+        # ========== 설정 메뉴 ==========
+        elif callback_data == 'settings_menu':
+            await self._show_settings_menu()
+
+        elif callback_data == 'settings_leverage':
+            await self._show_leverage_menu()
+
+        elif callback_data == 'settings_strategy':
+            await self._show_strategy_menu()
+
+        elif callback_data == 'settings_distance':
+            await self._show_distance_menu()
+
+        elif callback_data == 'settings_protection':
+            await self._show_protection_menu()
+
+        elif callback_data == 'settings_report':
+            await self._show_report_menu()
+
+        # ========== 설정 변경 처리 ==========
+        elif callback_data.startswith('set_leverage_'):
+            await self._handle_leverage_callback(callback_data)
+
+        elif callback_data.startswith('set_strategy_'):
+            await self._handle_strategy_callback(callback_data)
+
+        elif callback_data.startswith('set_distance_'):
+            await self._handle_distance_callback(callback_data)
+
+        elif callback_data.startswith('set_protection_'):
+            await self._handle_protection_callback(callback_data)
+
+        elif callback_data.startswith('set_report_'):
+            await self._handle_report_callback(callback_data)
+
     async def _show_setsize_menu(self):
         """주문 크기 설정 메뉴 표시"""
         if self._get_balance:
@@ -461,11 +607,12 @@ class TelegramBot:
                 )
                 return
 
-            # 주문 크기 변경
-            result = self._set_order_size(new_size)
+            # 주문 크기 변경 (즉시 재배치 포함)
+            result = self._set_order_size(new_size, force_rebalance=True)
             if result and result.get('success'):
                 old_size = result.get('old_size', 0)
                 required_margin = new_size / leverage
+                rebalanced = result.get('rebalanced', False)
 
                 msg = (
                     f"✅ <b>주문 크기 변경 완료</b>\n\n"
@@ -473,8 +620,11 @@ class TelegramBot:
                     f"• 이전: <code>${old_size:,.0f}</code>\n"
                     f"• 변경: <code>${new_size:,.0f}</code>\n"
                     f"• 필요 마진: <code>${required_margin:,.2f}</code> ({leverage}x)\n\n"
-                    f"⚠️ 다음 주문부터 적용됩니다."
                 )
+                if rebalanced:
+                    msg += "🔄 <b>기존 주문 취소 후 새 크기로 재배치 중...</b>"
+                else:
+                    msg += "⚠️ 다음 주문부터 적용됩니다."
                 self.send_message(msg, reply_markup=self._get_back_to_menu_keyboard())
             else:
                 error = result.get('error', '알 수 없는 오류') if result else '알 수 없는 오류'
@@ -482,6 +632,261 @@ class TelegramBot:
 
         except Exception as e:
             self.send_message(f"❌ 주문 크기 변경 실패: {e}", reply_markup=self._get_back_to_menu_keyboard())
+
+    # ========== 설정 메뉴 표시 함수들 ==========
+
+    async def _show_settings_menu(self):
+        """설정 메뉴 표시"""
+        if self._get_config:
+            try:
+                config = self._get_config()
+                strategy = config.get('strategy', {})
+
+                msg = (
+                    f"⚙️ <b>설정 메뉴</b>\n\n"
+                    f"<b>[ 현재 설정 ]</b>\n"
+                    f"• 레버리지: <code>{strategy.get('leverage', 20)}x</code>\n"
+                    f"• 전략: <code>{strategy.get('num_orders_per_side', 2)}+{strategy.get('num_orders_per_side', 2)}</code>\n"
+                    f"• 주문 거리: <code>{strategy.get('order_distances_bps', [])} bps</code>\n"
+                    f"• 리포트 주기: <code>{self._report_interval / 60:.0f}분</code>\n\n"
+                    f"변경할 설정을 선택하세요:"
+                )
+                self.send_message(msg, reply_markup=self._get_settings_menu_keyboard())
+            except Exception as e:
+                self.send_message(f"❌ 설정 조회 실패: {e}", reply_markup=self._get_back_to_menu_keyboard())
+        else:
+            self.send_message("⚙️ <b>설정 메뉴</b>\n\n변경할 설정을 선택하세요:",
+                            reply_markup=self._get_settings_menu_keyboard())
+
+    async def _show_leverage_menu(self):
+        """레버리지 설정 메뉴 표시"""
+        current = 20
+        if self._get_config:
+            try:
+                config = self._get_config()
+                current = config.get('strategy', {}).get('leverage', 20)
+            except:
+                pass
+
+        msg = (
+            f"📊 <b>레버리지 설정</b>\n\n"
+            f"현재: <code>{current}x</code>\n\n"
+            f"⚠️ 레버리지를 높이면 수익/손실이 증가합니다.\n"
+            f"동일 마진으로 더 큰 포지션을 잡을 수 있습니다."
+        )
+        self.send_message(msg, reply_markup=self._get_leverage_keyboard())
+
+    async def _show_strategy_menu(self):
+        """전략 설정 메뉴 표시"""
+        current = 2
+        if self._get_config:
+            try:
+                config = self._get_config()
+                current = config.get('strategy', {}).get('num_orders_per_side', 2)
+            except:
+                pass
+
+        msg = (
+            f"🎯 <b>전략 설정</b>\n\n"
+            f"현재: <code>{current}+{current}</code>\n\n"
+            f"<b>1+1</b>: 매수/매도 각 1개 주문\n"
+            f"• 관리 간단, 체결 위험 낮음\n\n"
+            f"<b>2+2</b>: 매수/매도 각 2개 주문\n"
+            f"• 포인트 적립 효율 높음\n"
+            f"• 더 넓은 가격대 커버"
+        )
+        self.send_message(msg, reply_markup=self._get_strategy_keyboard())
+
+    async def _show_distance_menu(self):
+        """주문 거리 설정 메뉴 표시"""
+        current = [7.5, 8.5]
+        if self._get_config:
+            try:
+                config = self._get_config()
+                current = config.get('strategy', {}).get('order_distances_bps', [7.5, 8.5])
+            except:
+                pass
+
+        msg = (
+            f"📏 <b>주문 거리 설정</b>\n\n"
+            f"현재: <code>{current} bps</code>\n\n"
+            f"<b>보수적 (8-9bps)</b>\n"
+            f"• Band A 경계에서 멀리 → 체결 위험 최소화\n\n"
+            f"<b>표준 (7-8.5bps)</b>\n"
+            f"• 균형잡힌 설정 (권장)\n\n"
+            f"<b>공격적 (6-7.5bps)</b>\n"
+            f"• 체결 위험 있으나 포인트 효율 극대화"
+        )
+        self.send_message(msg, reply_markup=self._get_distance_keyboard())
+
+    async def _show_protection_menu(self):
+        """체결 보호 설정 메뉴 표시"""
+        msg = (
+            f"🛡️ <b>연속 체결 보호</b>\n\n"
+            f"연속 체결 시 자동으로 봇을 일시 정지합니다.\n\n"
+            f"<b>켜기</b>: 1분 내 3회 체결 시 5분 정지\n"
+            f"• 반복 체결 시 1시간까지 연장\n\n"
+            f"<b>끄기</b>: 체결 상관없이 계속 운영\n"
+            f"• 급변장에서 손실 위험 증가"
+        )
+        self.send_message(msg, reply_markup=self._get_protection_keyboard())
+
+    async def _show_report_menu(self):
+        """리포트 주기 설정 메뉴 표시"""
+        current = self._report_interval
+        if current == 0:
+            current_str = "끄기"
+        elif current < 60:
+            current_str = f"{current}초"
+        else:
+            current_str = f"{current / 60:.0f}분"
+
+        msg = (
+            f"📱 <b>상태 리포트 주기</b>\n\n"
+            f"현재: <code>{current_str}</code>\n\n"
+            f"텔레그램으로 자동 상태 리포트를 받을 주기를 설정합니다.\n"
+            f"'끄기'를 선택하면 수동 조회만 가능합니다."
+        )
+        self.send_message(msg, reply_markup=self._get_report_interval_keyboard())
+
+    # ========== 설정 변경 핸들러 ==========
+
+    async def _handle_leverage_callback(self, callback_data: str):
+        """레버리지 변경 처리"""
+        if not self._set_leverage:
+            self.send_message("❌ 레버리지 변경 기능이 설정되지 않았습니다.",
+                            reply_markup=self._get_settings_menu_keyboard())
+            return
+
+        try:
+            leverage = int(callback_data.replace('set_leverage_', ''))
+            result = self._set_leverage(leverage)
+
+            if result and result.get('success'):
+                old = result.get('old_leverage', 0)
+                new = result.get('new_leverage', leverage)
+                msg = (
+                    f"✅ <b>레버리지 변경 완료</b>\n\n"
+                    f"• 이전: <code>{old}x</code>\n"
+                    f"• 변경: <code>{new}x</code>\n\n"
+                    f"💡 주문 크기를 재설정하면 새 레버리지가 반영됩니다."
+                )
+                self.send_message(msg, reply_markup=self._get_settings_menu_keyboard())
+            else:
+                error = result.get('error', '알 수 없는 오류') if result else '알 수 없는 오류'
+                self.send_message(f"❌ 변경 실패: {error}", reply_markup=self._get_settings_menu_keyboard())
+        except Exception as e:
+            self.send_message(f"❌ 레버리지 변경 실패: {e}", reply_markup=self._get_settings_menu_keyboard())
+
+    async def _handle_strategy_callback(self, callback_data: str):
+        """전략 변경 처리"""
+        if not self._set_strategy:
+            self.send_message("❌ 전략 변경 기능이 설정되지 않았습니다.",
+                            reply_markup=self._get_settings_menu_keyboard())
+            return
+
+        try:
+            num_orders = int(callback_data.replace('set_strategy_', ''))
+            result = self._set_strategy(num_orders)
+
+            if result and result.get('success'):
+                old = result.get('old_strategy', '')
+                new = result.get('new_strategy', f'{num_orders}+{num_orders}')
+                msg = (
+                    f"✅ <b>전략 변경 완료</b>\n\n"
+                    f"• 이전: <code>{old}</code>\n"
+                    f"• 변경: <code>{new}</code>\n\n"
+                    f"🔄 기존 주문 취소 후 재배치 중..."
+                )
+                self.send_message(msg, reply_markup=self._get_settings_menu_keyboard())
+            else:
+                error = result.get('error', '알 수 없는 오류') if result else '알 수 없는 오류'
+                self.send_message(f"❌ 변경 실패: {error}", reply_markup=self._get_settings_menu_keyboard())
+        except Exception as e:
+            self.send_message(f"❌ 전략 변경 실패: {e}", reply_markup=self._get_settings_menu_keyboard())
+
+    async def _handle_distance_callback(self, callback_data: str):
+        """주문 거리 변경 처리"""
+        if not self._set_distances:
+            self.send_message("❌ 주문 거리 변경 기능이 설정되지 않았습니다.",
+                            reply_markup=self._get_settings_menu_keyboard())
+            return
+
+        try:
+            preset = callback_data.replace('set_distance_', '')
+            preset_names = {
+                'conservative': '보수적 (8-9bps)',
+                'standard': '표준 (7-8.5bps)',
+                'aggressive': '공격적 (6-7.5bps)',
+            }
+            result = self._set_distances(preset)
+
+            if result and result.get('success'):
+                old = result.get('old_distances', [])
+                new = result.get('new_distances', [])
+                preset_name = preset_names.get(preset, preset)
+                msg = (
+                    f"✅ <b>주문 거리 변경 완료</b>\n\n"
+                    f"• 설정: <b>{preset_name}</b>\n"
+                    f"• 이전: <code>{old} bps</code>\n"
+                    f"• 변경: <code>{new} bps</code>\n\n"
+                    f"🔄 기존 주문 취소 후 재배치 중..."
+                )
+                self.send_message(msg, reply_markup=self._get_settings_menu_keyboard())
+            else:
+                error = result.get('error', '알 수 없는 오류') if result else '알 수 없는 오류'
+                self.send_message(f"❌ 변경 실패: {error}", reply_markup=self._get_settings_menu_keyboard())
+        except Exception as e:
+            self.send_message(f"❌ 주문 거리 변경 실패: {e}", reply_markup=self._get_settings_menu_keyboard())
+
+    async def _handle_protection_callback(self, callback_data: str):
+        """체결 보호 설정 처리"""
+        if not self._set_protection:
+            self.send_message("❌ 체결 보호 설정 기능이 설정되지 않았습니다.",
+                            reply_markup=self._get_settings_menu_keyboard())
+            return
+
+        try:
+            enabled = callback_data == 'set_protection_on'
+            result = self._set_protection(enabled)
+
+            if result and result.get('success'):
+                status = "켜짐 ✅" if enabled else "꺼짐 ❌"
+                msg = (
+                    f"✅ <b>연속 체결 보호 변경 완료</b>\n\n"
+                    f"• 상태: <b>{status}</b>\n"
+                )
+                if not enabled:
+                    msg += "\n⚠️ 급변장에서 연속 체결 시 손실 위험이 있습니다."
+                self.send_message(msg, reply_markup=self._get_settings_menu_keyboard())
+            else:
+                error = result.get('error', '알 수 없는 오류') if result else '알 수 없는 오류'
+                self.send_message(f"❌ 변경 실패: {error}", reply_markup=self._get_settings_menu_keyboard())
+        except Exception as e:
+            self.send_message(f"❌ 체결 보호 설정 실패: {e}", reply_markup=self._get_settings_menu_keyboard())
+
+    async def _handle_report_callback(self, callback_data: str):
+        """리포트 주기 변경 처리"""
+        try:
+            interval = int(callback_data.replace('set_report_', ''))
+            self._report_interval = float(interval)
+
+            if interval == 0:
+                interval_str = "끄기"
+            elif interval < 60:
+                interval_str = f"{interval}초"
+            else:
+                interval_str = f"{interval / 60:.0f}분"
+
+            msg = (
+                f"✅ <b>리포트 주기 변경 완료</b>\n\n"
+                f"• 주기: <b>{interval_str}</b>\n"
+            )
+            if interval == 0:
+                msg += "\n💡 /status 명령으로 수동 조회하세요."
+            self.send_message(msg, reply_markup=self._get_settings_menu_keyboard())
+        except Exception as e:
+            self.send_message(f"❌ 리포트 주기 변경 실패: {e}", reply_markup=self._get_settings_menu_keyboard())
 
     async def _handle_command(self, command: str, args: list = None):
         """명령어 처리"""
