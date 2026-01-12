@@ -47,10 +47,9 @@ logs/
 .coverage
 htmlcov/
 
-# 민감한 데이터 (개인키, 암호화 파일)
-data/
-credentials.enc
-.salt
+# 민감한 데이터 - 평문 개인키는 절대 커밋 금지!
+# data/credentials.enc와 data/.salt는 암호화되어 있으므로 커밋 가능
+# (MASTER_PASSWORD 없이는 복호화 불가)
 
 # 기타
 .DS_Store

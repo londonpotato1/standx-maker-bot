@@ -8,6 +8,15 @@ from pathlib import Path
 from typing import List, Optional
 from dotenv import load_dotenv
 
+# 암호화 모듈 (Railway 배포 시 마스터 비밀번호로 복호화)
+try:
+    from utils.password_crypto import PasswordCrypto
+except ImportError:
+    try:
+        from standx_maker_bot.utils.password_crypto import PasswordCrypto
+    except ImportError:
+        PasswordCrypto = None
+
 
 @dataclass
 class StandXConfig:
@@ -185,11 +194,30 @@ class Config:
                 chain=sx.get('chain', config.standx.chain),
             )
 
-        # Wallet 설정 (환경변수 우선)
+        # Wallet 설정 (우선순위: 환경변수 > 암호화 파일 > config.yaml)
         wallet_data = config_data.get('wallet', {})
+        wallet_address = os.getenv('WALLET_ADDRESS', wallet_data.get('address', ''))
+        wallet_private_key = os.getenv('WALLET_PRIVATE_KEY', wallet_data.get('private_key', ''))
+
+        # MASTER_PASSWORD가 있으면 암호화된 파일에서 복호화 시도
+        master_password = os.getenv('MASTER_PASSWORD')
+        if master_password and PasswordCrypto:
+            data_dir = base_dir / "data"
+            crypto = PasswordCrypto(data_dir)
+
+            if crypto.has_credentials():
+                try:
+                    cred = crypto.load_credential(master_password, "standx")
+                    if cred:
+                        wallet_address = cred.address or wallet_address
+                        wallet_private_key = cred.private_key or wallet_private_key
+                        print("[CONFIG] 암호화된 자격증명에서 지갑 정보 로드 완료")
+                except Exception as e:
+                    print(f"[CONFIG] 자격증명 복호화 실패: {e}")
+
         config.wallet = WalletConfig(
-            address=os.getenv('WALLET_ADDRESS', wallet_data.get('address', '')),
-            private_key=os.getenv('WALLET_PRIVATE_KEY', wallet_data.get('private_key', '')),
+            address=wallet_address,
+            private_key=wallet_private_key,
         )
 
         # Strategy 설정
