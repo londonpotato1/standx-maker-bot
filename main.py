@@ -159,10 +159,14 @@ async def main_async(config_path: str, dry_run: bool = False, order_size: float 
         return 1
 
     # 클라이언트 초기화
+    logger.info("REST 클라이언트 초기화 중...")
     rest_client = StandXRestClient(auth, config.standx.base_url)
+    logger.info("WebSocket 클라이언트 초기화 중...")
     ws_client = StandXWebSocket(config.standx.ws_url, auth)
+    logger.info("클라이언트 초기화 완료")
 
     # 잔액 확인
+    logger.info("잔액 조회 중...")
     try:
         balance = rest_client.get_balance()
         logger.info(f"잔액: ${balance.available:.2f} available, ${balance.equity:.2f} equity")
@@ -170,10 +174,13 @@ async def main_async(config_path: str, dry_run: bool = False, order_size: float 
         logger.warning(f"잔액 조회 실패: {e}")
 
     # 전략 초기화
+    logger.info("전략 초기화 중...")
     strategy = MakerFarmingStrategy(config, rest_client, ws_client)
+    logger.info("전략 초기화 완료")
 
     # 텔레그램 봇 초기화
     telegram_bot = None
+    logger.info(f"텔레그램 설정 확인: enabled={config.telegram.enabled}, token={'있음' if config.telegram.bot_token else '없음'}, chat_id={'있음' if config.telegram.chat_id else '없음'}")
     if config.telegram.enabled and config.telegram.bot_token and config.telegram.chat_id:
         telegram_config = TelegramConfig(
             bot_token=config.telegram.bot_token,
@@ -200,7 +207,9 @@ async def main_async(config_path: str, dry_run: bool = False, order_size: float 
 
     # 전략 시작
     try:
+        logger.info("전략 시작 중...")
         await strategy.start()
+        logger.info("전략 시작 완료")
 
         # 텔레그램 봇 시작
         telegram_report_task = None
