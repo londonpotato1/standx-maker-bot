@@ -335,6 +335,32 @@ class MakerFarmingStrategy:
         self._force_rebalance_requested = True
         logger.info("[강제재배치] 요청됨 - 다음 루프에서 모든 주문 재배치")
 
+        # ★ 즉시 주문 취소 (체결 방지)
+        try:
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                asyncio.create_task(self._cancel_all_orders_immediately())
+                logger.info("[강제재배치] ★ 즉시 취소 태스크 시작됨")
+        except Exception as e:
+            logger.warning(f"[강제재배치] 즉시 취소 태스크 생성 실패: {e}")
+
+    async def _cancel_all_orders_immediately(self):
+        """설정 변경 시 모든 주문 즉시 취소 (체결 방지)"""
+        try:
+            logger.info("[즉시취소] ★★★ 모든 주문 취소 시작...")
+            symbols = self.config.strategy.symbols
+            for symbol in symbols:
+                state = self._symbol_states.get(symbol)
+                if state:
+                    # Lock 해제 후 취소
+                    for order in state.buy_orders + state.sell_orders:
+                        if order and order.is_active:
+                            self.safety_guard.clear_order_lock(order.cl_ord_id)
+                    await self.order_manager.cancel_all(symbol)
+            logger.info("[즉시취소] ★★★ 모든 주문 취소 완료")
+        except Exception as e:
+            logger.error(f"[즉시취소] 취소 실패: {e}")
+
     def enable_orders(self):
         """주문 활성화 (텔레그램에서 시작 버튼 클릭 시)"""
         self._orders_enabled = True
