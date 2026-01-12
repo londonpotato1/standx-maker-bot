@@ -60,6 +60,8 @@ class TelegramBot:
         self._get_balance: Optional[Callable] = None
         self._get_config: Optional[Callable] = None
         self._set_order_size: Optional[Callable] = None
+        self._close_all_positions: Optional[Callable] = None
+        self._get_positions: Optional[Callable] = None
 
     def set_callbacks(
         self,
@@ -70,6 +72,8 @@ class TelegramBot:
         get_balance: Callable = None,
         get_config: Callable = None,
         set_order_size: Callable = None,
+        close_all_positions: Callable = None,
+        get_positions: Callable = None,
     ):
         """콜백 함수 설정"""
         self._on_stop = on_stop
@@ -79,6 +83,8 @@ class TelegramBot:
         self._get_balance = get_balance
         self._get_config = get_config
         self._set_order_size = set_order_size
+        self._close_all_positions = close_all_positions
+        self._get_positions = get_positions
 
     def send_message(self, text: str, parse_mode: str = "HTML") -> bool:
         """메시지 전송"""
@@ -346,6 +352,79 @@ class TelegramBot:
             else:
                 self.send_message("❌ 설정 조회 기능이 설정되지 않았습니다.")
 
+        elif command == '/positions':
+            if self._get_positions:
+                try:
+                    positions = self._get_positions()
+                    if not positions:
+                        self.send_message("📭 현재 열린 포지션이 없습니다.")
+                        return
+
+                    msg = "📊 <b>현재 포지션</b>\n\n"
+                    total_pnl = 0
+                    for pos in positions:
+                        side_emoji = "🟢" if pos['side'] == 'long' else "🔴"
+                        pnl = pos['unrealized_pnl']
+                        total_pnl += pnl
+                        pnl_emoji = "📈" if pnl >= 0 else "📉"
+
+                        msg += (
+                            f"{side_emoji} <b>{pos['symbol']}</b> {pos['side'].upper()}\n"
+                            f"   크기: <code>{pos['size']:.4f}</code>\n"
+                            f"   진입가: <code>${pos['entry_price']:,.2f}</code>\n"
+                            f"   현재가: <code>${pos['mark_price']:,.2f}</code>\n"
+                            f"   {pnl_emoji} PnL: <code>${pnl:+,.2f}</code>\n\n"
+                        )
+
+                    pnl_emoji = "📈" if total_pnl >= 0 else "📉"
+                    msg += f"━━━━━━━━━━━━━━\n{pnl_emoji} <b>총 PnL: <code>${total_pnl:+,.2f}</code></b>\n\n"
+                    msg += "💡 <i>/closeall 로 모든 포지션 종료</i>"
+                    self.send_message(msg)
+                except Exception as e:
+                    self.send_message(f"❌ 포지션 조회 실패: {e}")
+            else:
+                self.send_message("❌ 포지션 조회 기능이 설정되지 않았습니다.")
+
+        elif command == '/closeall':
+            if self._close_all_positions:
+                # 먼저 현재 포지션 확인
+                if self._get_positions:
+                    try:
+                        positions = self._get_positions()
+                        if not positions:
+                            self.send_message("📭 종료할 포지션이 없습니다.")
+                            return
+
+                        # 포지션 정보 표시
+                        msg = "⚠️ <b>다음 포지션을 시장가로 종료합니다:</b>\n\n"
+                        for pos in positions:
+                            side_emoji = "🟢" if pos['side'] == 'long' else "🔴"
+                            msg += f"{side_emoji} {pos['symbol']} {pos['side'].upper()} {pos['size']:.4f}\n"
+                        msg += "\n⏳ 종료 중..."
+                        self.send_message(msg)
+                    except Exception as e:
+                        logger.error(f"포지션 확인 실패: {e}")
+
+                # 포지션 종료 실행
+                try:
+                    result = self._close_all_positions()
+                    if result.get('success'):
+                        closed = result.get('closed', [])
+                        if closed:
+                            msg = "✅ <b>포지션 종료 완료</b>\n\n"
+                            for c in closed:
+                                msg += f"• {c['symbol']}: {c['side']} {c['size']:.4f} 종료\n"
+                            self.send_message(msg)
+                        else:
+                            self.send_message("📭 종료할 포지션이 없었습니다.")
+                    else:
+                        error = result.get('error', '알 수 없는 오류')
+                        self.send_message(f"❌ 포지션 종료 실패: {error}")
+                except Exception as e:
+                    self.send_message(f"❌ 포지션 종료 실패: {e}")
+            else:
+                self.send_message("❌ 포지션 종료 기능이 설정되지 않았습니다.")
+
         elif command == '/stop':
             if self._on_stop:
                 self.send_message("🛑 봇 중지 요청 중...")
@@ -374,13 +453,15 @@ class TelegramBot:
                 "<b>[ 모니터링 ]</b>\n"
                 "/status - 현재 상태 조회\n"
                 "/stats - 통계 조회\n"
-                "/balance - 잔고 및 주문 가능 금액\n\n"
+                "/balance - 잔고 및 주문 가능 금액\n"
+                "/positions - 현재 포지션 조회\n\n"
                 "<b>[ 설정 ]</b>\n"
                 "/config - 현재 설정 조회\n"
                 "/setsize <금액> - 주문 크기 변경\n\n"
                 "<b>[ 제어 ]</b>\n"
                 "/stop - 봇 중지\n"
                 "/start - 봇 시작\n"
+                "/closeall - 모든 포지션 시장가 종료\n"
                 "/help - 도움말"
             )
             self.send_message(msg)

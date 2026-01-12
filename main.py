@@ -257,10 +257,76 @@ async def main_async(config_path: str, dry_run: bool = False, order_size: float 
                     }
                 except Exception as e:
                     logger.error(f"주문 크기 변경 실패: {e}")
-                    return {
-                        'success': False,
-                        'error': str(e),
-                    }
+
+            def get_positions():
+                """현재 포지션 목록 반환"""
+                try:
+                    positions = rest_client.get_positions()
+                    return [
+                        {
+                            'symbol': p.symbol,
+                            'side': p.side,
+                            'size': p.size,
+                            'entry_price': p.entry_price,
+                            'mark_price': p.mark_price,
+                            'unrealized_pnl': p.unrealized_pnl,
+                        }
+                        for p in positions
+                    ]
+                except Exception as e:
+                    logger.error(f"포지션 조회 실패: {e}")
+                    return []
+
+            def close_all_positions():
+                """모든 포지션 시장가로 종료"""
+                try:
+                    # Import 처리
+                    try:
+                        from api.rest_client import OrderSide, OrderType
+                    except ImportError:
+                        from standx_maker_bot.api.rest_client import OrderSide, OrderType
+
+                    positions = rest_client.get_positions()
+                    if not positions:
+                        return {'success': True, 'closed': []}
+
+                    closed = []
+                    errors = []
+
+                    for pos in positions:
+                        # 포지션 반대 방향으로 시장가 주문
+                        # long 포지션이면 sell, short 포지션이면 buy
+                        close_side = OrderSide.SELL if pos.side == 'long' else OrderSide.BUY
+
+                        try:
+                            result = rest_client.create_order(
+                                symbol=pos.symbol,
+                                side=close_side,
+                                order_type=OrderType.MARKET,
+                                quantity=pos.size,
+                                reduce_only=True,
+                            )
+                            closed.append({
+                                'symbol': pos.symbol,
+                                'side': pos.side,
+                                'size': pos.size,
+                            })
+                            logger.info(f"포지션 종료: {pos.symbol} {pos.side} {pos.size}")
+                        except Exception as e:
+                            errors.append(f"{pos.symbol}: {e}")
+                            logger.error(f"포지션 종료 실패 {pos.symbol}: {e}")
+
+                    if errors:
+                        return {
+                            'success': False,
+                            'error': "; ".join(errors),
+                            'closed': closed,
+                        }
+                    return {'success': True, 'closed': closed}
+
+                except Exception as e:
+                    logger.error(f"포지션 종료 실패: {e}")
+                    return {'success': False, 'error': str(e)}
 
             telegram_bot.set_callbacks(
                 on_stop=on_stop,
@@ -270,6 +336,8 @@ async def main_async(config_path: str, dry_run: bool = False, order_size: float 
                 get_balance=get_balance,
                 get_config=get_config,
                 set_order_size=set_order_size,
+                get_positions=get_positions,
+                close_all_positions=close_all_positions,
             )
             await telegram_bot.start()
 
