@@ -32,11 +32,10 @@ strategy:
   # 2% = 안전 마진 예약
   margin_reserve_percent: 2
 
-  # 2+2 전략 설정 (방향당 주문 개수)
-  num_orders_per_side: 2    # 1=1+1, 2=2+2 전략
-  order_distances_bps:      # 각 주문의 거리 (bps) - Band A 경계 근처
-    - 7.5                   # 주문1: 7.5bps (Band A 내, 2.5bps 여유)
-    - 8.5                   # 주문2: 8.5bps (Band A 경계, 1.5bps 여유)
+  # 1+1 전략 설정 (방향당 주문 개수)
+  num_orders_per_side: 1    # 1=1+1, 2=2+2 전략
+  order_distances_bps:      # 각 주문의 거리 (bps)
+    - 7.5                   # 주.5bps (Band A 내, 2.5bps 여유)
 
   # 거리 설정 (bps = 0.01%)
   # Band A 범위: 0-10 bps (100% 포인트)
@@ -63,7 +62,7 @@ strategy:
 
   # 재배치 트리거 (Band 이탈 + Drift 병행)
   rebalance_on_band_exit: true  # Band A 이탈 시 재배치
-  drift_threshold_bps: 15       # 기준가격 변동 15bps 초과 시 재배치 (업타임 개선)
+  drift_threshold_bps: 2.5      # 기준가격 변동 2.5bps 초과 시 재배치
 
   # 체크 주기 (초) - 빠른 대응
   check_interval_seconds: 0.3
