@@ -130,8 +130,9 @@ fill_protection:
 
   # 오더북 큐 프로텍션
   # 내 주문 앞의 물량이 급감하면 체결 위험 → 선제 취소
+  # ★ 유동성 낮은 시장에서 너무 자주 발동되어 비활성화
   queue_protection:
-    enabled: true
+    enabled: false
     # 앞 물량 감소 임계값 (%) - 이 비율 이상 감소 시 취소
     drop_threshold_percent: 30.0
     # 모니터링 윈도우 (초)
