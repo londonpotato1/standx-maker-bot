@@ -170,9 +170,12 @@ class TelegramBot:
                     {"text": "📐 주문크기", "callback_data": "setsize_menu"},
                 ],
                 [
+                    {"text": "🔓 정지해제", "callback_data": "reset_consecutive_fill_pause"},
                     {"text": "⚙️ 설정", "callback_data": "settings_menu"},
-                    {"text": "❌ 포지션 청산", "callback_data": "closeall_confirm"},
                     {"text": "🛑 봇 종료", "callback_data": "stop"},
+                ],
+                [
+                    {"text": "❌ 포지션 청산", "callback_data": "closeall_confirm"},
                 ],
             ]
         }
@@ -967,6 +970,15 @@ class TelegramBot:
             if result and result.get('success'):
                 remaining_was = result.get('remaining_was', 0)
                 level_was = result.get('level_was', 0)
+
+                # 정지 상태가 아니었을 때
+                if remaining_was <= 0 and level_was == 0:
+                    self.send_message(
+                        "ℹ️ <b>현재 정지 상태가 아닙니다</b>\n\n"
+                        "연속 체결 보호가 발동되지 않은 상태입니다.",
+                        reply_markup=self._get_main_menu_keyboard()
+                    )
+                    return
 
                 if remaining_was >= 3600:
                     remaining_str = f"{remaining_was / 3600:.1f}시간"
