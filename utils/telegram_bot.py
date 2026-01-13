@@ -396,7 +396,10 @@ class TelegramBot:
                     "timeout": 30,
                 }
 
-                response = requests.get(url, params=params, timeout=35)
+                # ★ 동기 HTTP 요청을 비동기로 실행 (이벤트 루프 블로킹 방지)
+                response = await asyncio.to_thread(
+                    requests.get, url, params=params, timeout=35
+                )
                 if response.status_code != 200:
                     await asyncio.sleep(5)
                     continue
