@@ -508,7 +508,8 @@ class SafetyGuard:
             한도 초과 여부 (유예 시간 경과 후에만 True)
         """
         try:
-            positions = self.rest_client.get_positions(symbol)
+            # ★ 동기 API를 비동기로 실행 (이벤트 루프 블로킹 방지)
+            positions = await asyncio.to_thread(self.rest_client.get_positions, symbol)
             now = time.time()
 
             for pos in positions:

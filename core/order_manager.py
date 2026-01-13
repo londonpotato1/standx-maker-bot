@@ -166,7 +166,9 @@ class OrderManager:
         try:
             logger.info(f"시장가 주문 (청산): {symbol} {side.value} {quantity}")
 
-            response = self.rest_client.create_order(
+            # ★ 동기 API를 비동기로 실행 (이벤트 루프 블로킹 방지)
+            response = await asyncio.to_thread(
+                self.rest_client.create_order,
                 symbol=symbol,
                 side=side,
                 order_type=OrderType.MARKET,
@@ -231,7 +233,9 @@ class OrderManager:
         try:
             logger.info(f"주문 생성: {symbol} {side.value} {quantity} @ {price}")
 
-            response = self.rest_client.create_order(
+            # ★ 동기 API를 비동기로 실행 (이벤트 루프 블로킹 방지)
+            response = await asyncio.to_thread(
+                self.rest_client.create_order,
                 symbol=symbol,
                 side=side,
                 order_type=OrderType.LIMIT,
@@ -278,10 +282,11 @@ class OrderManager:
             return True
 
         try:
+            # ★ 동기 API를 비동기로 실행 (이벤트 루프 블로킹 방지)
             if order.order_id:
-                self.rest_client.cancel_order(order_id=order.order_id)
+                await asyncio.to_thread(self.rest_client.cancel_order, order_id=order.order_id)
             else:
-                self.rest_client.cancel_order(cl_ord_id=cl_ord_id)
+                await asyncio.to_thread(self.rest_client.cancel_order, cl_ord_id=cl_ord_id)
 
             order.status = ManagedOrderStatus.CANCELLED
             order.updated_at = time.time()
@@ -444,7 +449,8 @@ class OrderManager:
             symbol: 심볼 (선택)
         """
         try:
-            exchange_orders = self.rest_client.get_open_orders(symbol)
+            # ★ 동기 API를 비동기로 실행 (이벤트 루프 블로킹 방지)
+            exchange_orders = await asyncio.to_thread(self.rest_client.get_open_orders, symbol)
 
             # 거래소 주문을 딕셔너리로
             exchange_map = {o.cl_ord_id: o for o in exchange_orders if o.cl_ord_id}
@@ -476,7 +482,8 @@ class OrderManager:
                     # 3초 이상 지났는데도 거래소에 없으면 상세 조회 시도
                     # 단, 404 에러 시 바로 CANCELLED 처리하지 않음
                     try:
-                        detail = self.rest_client.get_order(cl_ord_id=cl_ord_id)
+                        # ★ 동기 API를 비동기로 실행 (이벤트 루프 블로킹 방지)
+                        detail = await asyncio.to_thread(self.rest_client.get_order, cl_ord_id=cl_ord_id)
                         if detail:
                             if detail.status == 'filled':
                                 order.status = ManagedOrderStatus.FILLED
