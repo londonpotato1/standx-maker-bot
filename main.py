@@ -457,7 +457,9 @@ async def main_async(config_path: str, dry_run: bool = False, order_size: float 
                 disable_orders=strategy.disable_orders,
                 is_orders_enabled=strategy.is_orders_enabled,
             )
-            await telegram_bot.start()
+            # ★ 텔레그램 봇을 태스크로 실행 (블로킹 방지)
+            telegram_task = asyncio.create_task(telegram_bot.start())
+            print("[MAIN] 텔레그램 봇 태스크 시작됨", flush=True)
 
             # 텔레그램 상태 리포트 태스크 (기본 5분, 동적 변경 지원)
             telegram_report_task = asyncio.create_task(
@@ -468,7 +470,9 @@ async def main_async(config_path: str, dry_run: bool = False, order_size: float 
         status_task = asyncio.create_task(status_printer(strategy, 30))
 
         # 메인 루프
+        print("[MAIN] 메인 루프 태스크 생성 중...", flush=True)
         run_task = asyncio.create_task(strategy.run())
+        print("[MAIN] 메인 루프 태스크 생성 완료", flush=True)
 
         # 종료 대기
         done, pending = await asyncio.wait(
@@ -481,6 +485,8 @@ async def main_async(config_path: str, dry_run: bool = False, order_size: float 
         run_task.cancel()
         if telegram_report_task:
             telegram_report_task.cancel()
+        if telegram_bot:
+            telegram_task.cancel()
 
         try:
             await status_task
@@ -495,6 +501,12 @@ async def main_async(config_path: str, dry_run: bool = False, order_size: float 
         if telegram_report_task:
             try:
                 await telegram_report_task
+            except asyncio.CancelledError:
+                pass
+
+        if telegram_bot:
+            try:
+                await telegram_task
             except asyncio.CancelledError:
                 pass
 
