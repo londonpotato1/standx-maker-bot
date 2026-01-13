@@ -619,7 +619,8 @@ class MakerFarmingStrategy:
             return
 
         try:
-            positions = self.rest_client.get_positions()
+            # ★ 동기 API 호출을 비동기로 실행 (이벤트 루프 블로킹 방지)
+            positions = await asyncio.to_thread(self.rest_client.get_positions)
 
             for pos in positions:
                 if pos.size > 0:
@@ -1269,10 +1270,21 @@ class MakerFarmingStrategy:
                     break
 
                 # ★ 포지션 확인 및 즉시 청산 (최우선 - 매 루프마다)
-                await self._check_and_liquidate_positions()
+                # 주의: 동기 API 호출이라 블로킹 가능 → try/except로 타임아웃 처리
+                try:
+                    await asyncio.wait_for(self._check_and_liquidate_positions(), timeout=5.0)
+                except asyncio.TimeoutError:
+                    print(f"[LOOP#{loop_count}] ⚠️ 포지션 확인 타임아웃 (5초)", flush=True)
+                except Exception as e:
+                    print(f"[LOOP#{loop_count}] ⚠️ 포지션 확인 오류: {e}", flush=True)
 
                 # 대기 중인 청산 처리
-                await self._process_pending_liquidations()
+                try:
+                    await asyncio.wait_for(self._process_pending_liquidations(), timeout=5.0)
+                except asyncio.TimeoutError:
+                    print(f"[LOOP#{loop_count}] ⚠️ 청산 처리 타임아웃 (5초)", flush=True)
+                except Exception as e:
+                    print(f"[LOOP#{loop_count}] ⚠️ 청산 처리 오류: {e}", flush=True)
 
                 # 포지션 홀딩 중에는 메이커 주문 스킵
                 if self._held_position:
