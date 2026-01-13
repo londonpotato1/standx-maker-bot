@@ -334,6 +334,11 @@ class MakerFarmingStrategy:
         다음 루프에서 모든 기존 주문을 취소하고 새 설정으로 재배치함.
         """
         self._force_rebalance_requested = True
+        # ★ 주문이 비활성화 상태면 활성화도 함께 (설정 변경 = 주문 시작 의도)
+        if not self._orders_enabled:
+            self._orders_enabled = True
+            print("[강제재배치] 주문 비활성화 상태 → 활성화로 변경", flush=True)
+            logger.info("[강제재배치] 주문 비활성화 상태 → 활성화로 변경")
         logger.info("[강제재배치] 요청됨 - 다음 루프에서 모든 주문 재배치")
 
         # ★ 즉시 주문 취소 (체결 방지)
