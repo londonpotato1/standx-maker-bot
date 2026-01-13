@@ -610,11 +610,30 @@ class MakerFarmingStrategy:
             except Exception as e:
                 logger.error(f"[청산처리] ❌ 오류: {e}")
 
+    async def _position_check_loop(self):
+        """
+        포지션 확인 루프 (별도 태스크)
+
+        메인 루프와 독립적으로 실행되어 포지션을 주기적으로 확인하고 청산.
+        동기 API 호출이 메인 루프를 블로킹하지 않도록 분리함.
+        """
+        print("[포지션체크] ★ 포지션 확인 루프 시작", flush=True)
+        while self._running:
+            try:
+                await self._check_and_liquidate_positions()
+            except Exception as e:
+                print(f"[포지션체크] 오류: {e}", flush=True)
+
+            # 5초 간격으로 포지션 확인 (너무 자주 하면 API 부하)
+            await asyncio.sleep(5)
+
+        print("[포지션체크] 포지션 확인 루프 종료", flush=True)
+
     async def _check_and_liquidate_positions(self):
         """
         포지션 직접 확인 후 즉시 청산 (핵심 안전장치)
 
-        매 루프마다 실제 포지션을 API로 확인하고,
+        주기적으로 실제 포지션을 API로 확인하고,
         포지션이 있으면 즉시 시장가로 청산
 
         단, 홀딩 모드 중에는 스킵 (±1% 익절/손절 대기 중)
@@ -1262,6 +1281,9 @@ class MakerFarmingStrategy:
         if self.config.fill_protection.binance.enabled or self.config.fill_protection.queue.enabled:
             fill_protection_task = asyncio.create_task(self.fill_protection.run(symbols))
 
+        # ★ 포지션 확인을 별도 태스크로 분리 (메인 루프 블로킹 방지)
+        position_check_task = asyncio.create_task(self._position_check_loop())
+
         try:
             loop_count = 0
             while self._running:
@@ -1275,22 +1297,14 @@ class MakerFarmingStrategy:
                     logger.error("비상 정지 상태")
                     break
 
-                # ★ 포지션 확인 및 즉시 청산 (최우선 - 매 루프마다)
-                # 주의: 동기 API 호출이라 블로킹 가능 → try/except로 타임아웃 처리
-                try:
-                    await asyncio.wait_for(self._check_and_liquidate_positions(), timeout=5.0)
-                except asyncio.TimeoutError:
-                    print(f"[LOOP#{loop_count}] ⚠️ 포지션 확인 타임아웃 (5초)", flush=True)
-                except Exception as e:
-                    print(f"[LOOP#{loop_count}] ⚠️ 포지션 확인 오류: {e}", flush=True)
-
-                # 대기 중인 청산 처리
-                try:
-                    await asyncio.wait_for(self._process_pending_liquidations(), timeout=5.0)
-                except asyncio.TimeoutError:
-                    print(f"[LOOP#{loop_count}] ⚠️ 청산 처리 타임아웃 (5초)", flush=True)
-                except Exception as e:
-                    print(f"[LOOP#{loop_count}] ⚠️ 청산 처리 오류: {e}", flush=True)
+                # 대기 중인 청산 처리 (포지션 확인은 별도 태스크에서)
+                if self._pending_liquidations:
+                    try:
+                        await asyncio.wait_for(self._process_pending_liquidations(), timeout=5.0)
+                    except asyncio.TimeoutError:
+                        print(f"[LOOP#{loop_count}] ⚠️ 청산 처리 타임아웃 (5초)", flush=True)
+                    except Exception as e:
+                        print(f"[LOOP#{loop_count}] ⚠️ 청산 처리 오류: {e}", flush=True)
 
                 # 포지션 홀딩 중에는 메이커 주문 스킵
                 if self._held_position:
