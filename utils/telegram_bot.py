@@ -202,6 +202,11 @@ class TelegramBot:
                     {"text": "15x", "callback_data": "set_leverage_15"},
                     {"text": "20x", "callback_data": "set_leverage_20"},
                 ],
+                [
+                    {"text": "25x", "callback_data": "set_leverage_25"},
+                    {"text": "30x", "callback_data": "set_leverage_30"},
+                    {"text": "40x", "callback_data": "set_leverage_40"},
+                ],
                 [{"text": "↩️ 설정으로", "callback_data": "settings_menu"}],
             ]
         }
