@@ -362,7 +362,7 @@ class MakerFarmingStrategy:
                     for order in state.buy_orders + state.sell_orders:
                         if order and order.is_active:
                             self.safety_guard.clear_order_lock(order.cl_ord_id)
-                    await self.order_manager.cancel_all(symbol)
+                    await self.order_manager.cancel_all_orders(symbol)
                     # ★ 상태도 초기화 (메인 루프에서 신규 배치하도록)
                     state.buy_orders = [None] * len(state.buy_orders)
                     state.sell_orders = [None] * len(state.sell_orders)
@@ -1312,7 +1312,7 @@ class MakerFarmingStrategy:
                         logger.warning("★ 연속 체결 정지 - 모든 포지션 청산 시작")
                         # 모든 주문 취소
                         for symbol in symbols:
-                            await self.order_manager.cancel_all(symbol)
+                            await self.order_manager.cancel_all_orders(symbol)
                         # 현재 포지션 조회 및 청산
                         try:
                             # ★ 동기 API를 비동기로 실행 (이벤트 루프 블로킹 방지)
@@ -1351,7 +1351,7 @@ class MakerFarmingStrategy:
                     if has_orders:
                         print("[주문정지] 모든 기존 주문 취소 중...", flush=True)
                         for symbol in symbols:
-                            await self.order_manager.cancel_all(symbol)
+                            await self.order_manager.cancel_all_orders(symbol)
                         print("[주문정지] 주문 취소 완료 - 대기 모드", flush=True)
 
                     # 대기 상태에서는 주문 없이 계속 모니터링만
