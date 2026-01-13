@@ -1286,11 +1286,11 @@ class MakerFarmingStrategy:
 
         try:
             loop_count = 0
+            print("[MAIN_LOOP] ★ while 루프 진입 직전", flush=True)
             while self._running:
                 loop_count += 1
-                # 10번 루프마다 로그 출력 (0.3초 간격이면 3초마다)
-                if loop_count % 10 == 1:
-                    print(f"[LOOP#{loop_count}] running={self._running}, orders_enabled={self._orders_enabled}, force_rebalance={self._force_rebalance_requested}", flush=True)
+                # 매 루프마다 로그 (디버깅용)
+                print(f"[LOOP#{loop_count}] running={self._running}, orders_enabled={self._orders_enabled}, force_rebalance={self._force_rebalance_requested}", flush=True)
 
                 # 비상 정지 체크
                 if self.safety_guard.is_emergency_stopped():
@@ -1349,12 +1349,12 @@ class MakerFarmingStrategy:
 
                 # ★ 주문 비활성화 상태면 모든 주문 취소 후 대기
                 if not self._orders_enabled:
-                    # 10번 루프마다 대기 상태 로그 (3초마다)
-                    if loop_count % 10 == 1:
-                        print(f"[LOOP#{loop_count}] 주문 비활성화 상태 - 대기 중...", flush=True)
+                    # 매 루프마다 대기 상태 로그 (디버깅용)
+                    print(f"[LOOP#{loop_count}] 주문 비활성화 - sleep 전 (interval={check_interval})", flush=True)
 
                     # 대기 상태에서는 주문 없이 계속 모니터링만
                     await asyncio.sleep(check_interval)
+                    print(f"[LOOP#{loop_count}] 주문 비활성화 - sleep 후", flush=True)
                     continue
 
                 # ★ 여기 도달하면 _orders_enabled=True
