@@ -69,6 +69,7 @@ class TelegramBot:
         self._enable_orders: Optional[Callable] = None
         self._disable_orders: Optional[Callable] = None
         self._is_orders_enabled: Optional[Callable] = None
+        self._reset_consecutive_fill_pause: Optional[Callable] = None
 
         # 상태 리포트 주기 (초), 0이면 비활성화
         self._report_interval: float = 300.0
@@ -91,6 +92,7 @@ class TelegramBot:
         enable_orders: Callable = None,
         disable_orders: Callable = None,
         is_orders_enabled: Callable = None,
+        reset_consecutive_fill_pause: Callable = None,
     ):
         """콜백 함수 설정"""
         self._on_stop = on_stop
@@ -109,6 +111,7 @@ class TelegramBot:
         self._enable_orders = enable_orders
         self._disable_orders = disable_orders
         self._is_orders_enabled = is_orders_enabled
+        self._reset_consecutive_fill_pause = reset_consecutive_fill_pause
 
     def get_report_interval(self) -> float:
         """현재 리포트 주기 반환"""
@@ -286,6 +289,15 @@ class TelegramBot:
             ]
         }
 
+    def _get_consecutive_fill_paused_keyboard(self):
+        """연속 체결 정지 중 키보드 (해제 버튼 포함)"""
+        return {
+            "inline_keyboard": [
+                [{"text": "🔓 정지 해제", "callback_data": "reset_consecutive_fill_pause"}],
+                [{"text": "↩️ 메뉴로 돌아가기", "callback_data": "menu"}],
+            ]
+        }
+
     def _get_order_size_keyboard(self):
         """주문 크기 설정 키보드"""
         return {
@@ -358,6 +370,7 @@ class TelegramBot:
                 else:
                     remaining_str = f"{remaining / 60:.0f}분"
                 msg += f"\n🛑 <b>연속체결 {level}단계 일시정지:</b> {remaining_str} 남음\n"
+                msg += f"💡 아래 버튼으로 수동 해제 가능\n"
 
             # 연속 체결 정지 횟수 표시
             pause_count = stats.get('consecutive_fill_pauses', 0)
@@ -380,7 +393,11 @@ class TelegramBot:
                     msg += f"  🔴 SELL: ${sell['price']:,.2f}\n"
 
             if with_menu:
-                self.send_message(msg, reply_markup=self._get_back_to_menu_keyboard())
+                # 연속 체결 정지 중이면 해제 버튼 표시
+                if status.get('consecutive_fill_paused'):
+                    self.send_message(msg, reply_markup=self._get_consecutive_fill_paused_keyboard())
+                else:
+                    self.send_message(msg, reply_markup=self._get_back_to_menu_keyboard())
             else:
                 self.send_message(msg)
         except Exception as e:
@@ -598,6 +615,10 @@ class TelegramBot:
 
         elif callback_data.startswith('set_report_'):
             await self._handle_report_callback(callback_data)
+
+        # ========== 연속 체결 정지 해제 ==========
+        elif callback_data == 'reset_consecutive_fill_pause':
+            await self._handle_reset_consecutive_fill_pause()
 
     async def _show_setsize_menu(self):
         """주문 크기 설정 메뉴 표시"""
@@ -931,6 +952,47 @@ class TelegramBot:
                 self.send_message(f"❌ 변경 실패: {error}", reply_markup=self._get_settings_menu_keyboard())
         except Exception as e:
             self.send_message(f"❌ 체결 보호 설정 실패: {e}", reply_markup=self._get_settings_menu_keyboard())
+
+    async def _handle_reset_consecutive_fill_pause(self):
+        """연속 체결 정지 수동 해제"""
+        if not self._reset_consecutive_fill_pause:
+            self.send_message(
+                "❌ 정지 해제 기능이 설정되지 않았습니다.",
+                reply_markup=self._get_back_to_menu_keyboard()
+            )
+            return
+
+        try:
+            result = self._reset_consecutive_fill_pause()
+            if result and result.get('success'):
+                remaining_was = result.get('remaining_was', 0)
+                level_was = result.get('level_was', 0)
+
+                if remaining_was >= 3600:
+                    remaining_str = f"{remaining_was / 3600:.1f}시간"
+                elif remaining_was >= 60:
+                    remaining_str = f"{remaining_was / 60:.0f}분"
+                else:
+                    remaining_str = f"{remaining_was:.0f}초"
+
+                msg = (
+                    f"✅ <b>연속 체결 정지 해제됨</b>\n\n"
+                    f"• 해제된 단계: {level_was}단계\n"
+                    f"• 남은 시간이었던: {remaining_str}\n\n"
+                    f"⚠️ 주의: 시장 상황을 확인 후 주문을 시작하세요.\n"
+                    f"연속 체결이 다시 발생하면 정지됩니다."
+                )
+                self.send_message(msg, reply_markup=self._get_main_menu_keyboard())
+            else:
+                self.send_message(
+                    "❌ 정지 해제 실패",
+                    reply_markup=self._get_back_to_menu_keyboard()
+                )
+        except Exception as e:
+            self.send_message(
+                f"❌ 정지 해제 실패: {e}",
+                reply_markup=self._get_back_to_menu_keyboard()
+            )
 
     async def _handle_report_callback(self, callback_data: str):
         """리포트 주기 변경 처리"""

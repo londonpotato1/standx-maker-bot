@@ -326,6 +326,30 @@ class MakerFarmingStrategy:
         """연속 체결 일시 정지 남은 시간 (초)"""
         return max(0, self._consecutive_fill_pause_until - time.time())
 
+    def reset_consecutive_fill_pause(self) -> dict:
+        """
+        연속 체결 보호 정지 수동 해제 (텔레그램에서 호출)
+
+        Returns:
+            {'success': True, 'remaining_was': 남은시간, 'level_was': 단계}
+        """
+        remaining = self.get_consecutive_fill_pause_remaining()
+        level = self._consecutive_fill_escalation_level
+
+        # 정지 상태 초기화
+        self._consecutive_fill_pause_until = 0
+        self._consecutive_fill_escalation_level = 0
+        self._last_pause_end_time = 0
+        self._fill_timestamps.clear()
+
+        logger.info(f"★ [연속체결보호] 수동 해제됨 (남은시간: {remaining:.0f}초, 단계: {level})")
+
+        return {
+            'success': True,
+            'remaining_was': remaining,
+            'level_was': level,
+        }
+
     def request_force_rebalance(self):
         """
         강제 재배치 요청

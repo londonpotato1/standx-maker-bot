@@ -456,6 +456,7 @@ async def main_async(config_path: str, dry_run: bool = False, order_size: float 
                 enable_orders=strategy.enable_orders,
                 disable_orders=strategy.disable_orders,
                 is_orders_enabled=strategy.is_orders_enabled,
+                reset_consecutive_fill_pause=strategy.reset_consecutive_fill_pause,
             )
             # ★ 텔레그램 봇을 태스크로 실행 (블로킹 방지)
             telegram_task = asyncio.create_task(telegram_bot.start())
