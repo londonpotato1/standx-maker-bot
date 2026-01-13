@@ -1256,7 +1256,13 @@ class MakerFarmingStrategy:
             fill_protection_task = asyncio.create_task(self.fill_protection.run(symbols))
 
         try:
+            loop_count = 0
             while self._running:
+                loop_count += 1
+                # 10번 루프마다 로그 출력 (0.3초 간격이면 3초마다)
+                if loop_count % 10 == 1:
+                    print(f"[LOOP#{loop_count}] running={self._running}, orders_enabled={self._orders_enabled}, force_rebalance={self._force_rebalance_requested}", flush=True)
+
                 # 비상 정지 체크
                 if self.safety_guard.is_emergency_stopped():
                     logger.error("비상 정지 상태")
@@ -1310,6 +1316,9 @@ class MakerFarmingStrategy:
 
                 # ★ 주문 비활성화 상태면 모든 주문 취소 후 대기
                 if not self._orders_enabled:
+                    # 100번 루프마다 대기 상태 로그 (30초마다)
+                    if loop_count % 100 == 1:
+                        print(f"[LOOP#{loop_count}] 주문 비활성화 상태 - 대기 중...", flush=True)
                     # 기존 주문이 있으면 모두 취소
                     has_orders = False
                     for symbol in symbols:
@@ -1329,6 +1338,9 @@ class MakerFarmingStrategy:
                     # 대기 상태에서는 주문 없이 계속 모니터링만
                     await asyncio.sleep(check_interval)
                     continue
+
+                # ★ 여기 도달하면 _orders_enabled=True
+                print(f"[LOOP#{loop_count}] ★ 주문 활성화 상태 진입! force_rebalance={self._force_rebalance_requested}", flush=True)
 
                 # ★ 강제 재배치 요청 처리 (텔레그램에서 설정 변경 시)
                 if self._force_rebalance_requested:
