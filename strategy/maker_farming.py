@@ -226,7 +226,8 @@ class MakerFarmingStrategy:
         self._force_rebalance_requested: bool = False
 
         # 주문 활성화 플래그 (텔레그램에서 시작/정지 제어)
-        self._orders_enabled: bool = False  # 기본값: 비활성화 (수동 시작 필요)
+        # 기본값: False (수동 시작) - 텔레그램에서 '주문 시작' 버튼 클릭 필요
+        self._orders_enabled: bool = False
 
         # 모든 포지션 청산 요청 플래그 (연속 체결 보호 발동 시)
         self._request_close_all_positions: bool = False
