@@ -1120,7 +1120,8 @@ class MakerFarmingStrategy:
         self._effective_order_size_usd = self.config.strategy.order_size_usd
 
         try:
-            balance = self.rest_client.get_balance()
+            # ★ 동기 API를 비동기로 실행 (이벤트 루프 블로킹 방지)
+            balance = await asyncio.to_thread(self.rest_client.get_balance)
             available = balance.available
 
             # 레버리지 및 마진 예약 설정
@@ -1309,7 +1310,8 @@ class MakerFarmingStrategy:
                             await self.order_manager.cancel_all(symbol)
                         # 현재 포지션 조회 및 청산
                         try:
-                            positions = self.rest_client.get_positions()
+                            # ★ 동기 API를 비동기로 실행 (이벤트 루프 블로킹 방지)
+                            positions = await asyncio.to_thread(self.rest_client.get_positions)
                             for pos in positions:
                                 if abs(pos.size) > 0:
                                     close_side = OrderSide.SELL if pos.size > 0 else OrderSide.BUY
