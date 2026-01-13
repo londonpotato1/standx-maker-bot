@@ -380,8 +380,20 @@ class MakerFarmingStrategy:
 
     def disable_orders(self):
         """주문 비활성화 및 기존 주문 취소 (텔레그램에서 정지 버튼 클릭 시)"""
+        print("[전략] ★★★ disable_orders() 호출됨", flush=True)
         self._orders_enabled = False
-        logger.info("★ 주문 비활성화됨 - 기존 주문 취소 예정")
+        logger.info("★ 주문 비활성화됨 - 기존 주문 취소 시작")
+
+        # ★ 즉시 모든 주문 취소 (비동기 태스크)
+        try:
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                asyncio.create_task(self._cancel_all_orders_immediately())
+                print("[전략] 주문 취소 태스크 생성됨", flush=True)
+                logger.info("[주문정지] ★ 즉시 취소 태스크 시작됨")
+        except Exception as e:
+            print(f"[전략] 주문 취소 태스크 생성 실패: {e}", flush=True)
+            logger.warning(f"[주문정지] 즉시 취소 태스크 생성 실패: {e}")
 
     def is_orders_enabled(self) -> bool:
         """주문 활성화 상태 확인"""
