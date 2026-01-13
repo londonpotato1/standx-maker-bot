@@ -1349,24 +1349,9 @@ class MakerFarmingStrategy:
 
                 # ★ 주문 비활성화 상태면 모든 주문 취소 후 대기
                 if not self._orders_enabled:
-                    # 100번 루프마다 대기 상태 로그 (30초마다)
-                    if loop_count % 100 == 1:
+                    # 10번 루프마다 대기 상태 로그 (3초마다)
+                    if loop_count % 10 == 1:
                         print(f"[LOOP#{loop_count}] 주문 비활성화 상태 - 대기 중...", flush=True)
-                    # 기존 주문이 있으면 모두 취소
-                    has_orders = False
-                    for symbol in symbols:
-                        state = self._symbol_states.get(symbol)
-                        if state:
-                            active_orders = state.get_active_buy_count() + state.get_active_sell_count()
-                            if active_orders > 0:
-                                has_orders = True
-                                break
-
-                    if has_orders:
-                        print("[주문정지] 모든 기존 주문 취소 중...", flush=True)
-                        for symbol in symbols:
-                            await self.order_manager.cancel_all_orders(symbol)
-                        print("[주문정지] 주문 취소 완료 - 대기 모드", flush=True)
 
                     # 대기 상태에서는 주문 없이 계속 모니터링만
                     await asyncio.sleep(check_interval)
