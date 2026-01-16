@@ -225,6 +225,9 @@ class MakerFarmingStrategy:
         # 강제 재배치 요청 플래그
         self._force_rebalance_requested: bool = False
 
+        # 주문 크기 수동 설정 플래그 (텔레그램에서 변경 시 True)
+        self._order_size_manually_set: bool = False
+
         # 주문 활성화 플래그 (텔레그램에서 시작/정지 제어)
         # 기본값: False (수동 시작) - 텔레그램에서 '주문 시작' 버튼 클릭 필요
         self._orders_enabled: bool = False
@@ -422,6 +425,16 @@ class MakerFarmingStrategy:
     def is_orders_enabled(self) -> bool:
         """주문 활성화 상태 확인"""
         return self._orders_enabled
+
+    def set_order_size_manual(self, size_usd: float):
+        """
+        주문 크기 수동 설정 (텔레그램에서 호출)
+
+        이 메서드로 설정하면 _calculate_effective_order_size()에서 재계산하지 않음
+        """
+        self._effective_order_size_usd = size_usd
+        self._order_size_manually_set = True
+        logger.info(f"★ 주문 크기 수동 설정: ${size_usd:.2f}")
 
     def _check_escalation_reset(self):
         """단계 리셋 확인 (30분간 체결 없으면 1단계로)"""
@@ -1173,6 +1186,11 @@ class MakerFarmingStrategy:
 
         청산용 마켓 오더 실행에 필요한 최소 금액을 예약
         """
+        # ★ 수동 설정된 경우 재계산하지 않음
+        if self._order_size_manually_set:
+            logger.info(f"주문 크기 수동 설정 유지: ${self._effective_order_size_usd:.2f}")
+            return
+
         LIQUIDATION_FEE_RESERVE_USD = 0.50  # 청산 수수료 예약 (고정)
         MIN_ORDER_SIZE_USD = 1.0  # StandX 최소 주문 금액
 

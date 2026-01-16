@@ -264,6 +264,10 @@ async def main_async(config_path: str, dry_run: bool = False, order_size: float 
                 try:
                     old_size = config.strategy.order_size_usd
                     config.strategy.order_size_usd = new_size
+
+                    # ★ 전략에도 수동 설정 알림 (재계산 방지)
+                    strategy.set_order_size_manual(new_size)
+
                     logger.info(f"주문 크기 변경: ${old_size} -> ${new_size}")
 
                     # 즉시 재배치 요청 (기존 주문 취소 후 새 크기로 재배치)
