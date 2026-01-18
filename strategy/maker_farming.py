@@ -1094,6 +1094,9 @@ class MakerFarmingStrategy:
         now = time.time()
         min_duration = self.config.strategy.order_lock_seconds
 
+        # ★ Band 이탈인 경우 Duration 무시 (긴급 상황)
+        is_band_exit = "Band A 이탈" in reason
+
         # 재배치 대상 수집 (취소할 주문들)
         buy_to_rebalance = []  # [(index, order)]
         sell_to_rebalance = []
@@ -1106,15 +1109,17 @@ class MakerFarmingStrategy:
                     buy_to_rebalance.append((i, order))
                     continue
 
-                duration = now - order.created_at
-                if duration < min_duration:
-                    logger.debug(f"[{symbol}] BUY{i+1} Duration 미충족 ({duration:.1f}s) - 스킵")
-                    continue
+                # ★ Band 이탈이 아닌 경우에만 Duration 체크
+                if not is_band_exit:
+                    duration = now - order.created_at
+                    if duration < min_duration:
+                        logger.debug(f"[{symbol}] BUY{i+1} Duration 미충족 ({duration:.1f}s) - 스킵")
+                        continue
 
                 needs_rebalance, _ = self.band_calculator.needs_rebalance(
                     reference_price, order.price, self.config.strategy.max_distance_bps
                 )
-                if needs_rebalance or "Drift" in reason:
+                if needs_rebalance or "Drift" in reason or is_band_exit:
                     buy_to_rebalance.append((i, order))
 
         # Sell 주문들 체크
@@ -1125,15 +1130,17 @@ class MakerFarmingStrategy:
                     sell_to_rebalance.append((i, order))
                     continue
 
-                duration = now - order.created_at
-                if duration < min_duration:
-                    logger.debug(f"[{symbol}] SELL{i+1} Duration 미충족 ({duration:.1f}s) - 스킵")
-                    continue
+                # ★ Band 이탈이 아닌 경우에만 Duration 체크
+                if not is_band_exit:
+                    duration = now - order.created_at
+                    if duration < min_duration:
+                        logger.debug(f"[{symbol}] SELL{i+1} Duration 미충족 ({duration:.1f}s) - 스킵")
+                        continue
 
                 needs_rebalance, _ = self.band_calculator.needs_rebalance(
                     reference_price, order.price, self.config.strategy.max_distance_bps
                 )
-                if needs_rebalance or "Drift" in reason:
+                if needs_rebalance or "Drift" in reason or is_band_exit:
                     sell_to_rebalance.append((i, order))
 
         # 교차 순차 재배치: Buy1 → Sell1 → Buy2 → Sell2 순서
