@@ -1020,8 +1020,30 @@ class MakerFarmingStrategy:
 
         now = time.time()
 
-        # 1. Band 상태 기반 부분 재배치 필요 여부 확인 (쿨다운 무시!)
-        # ★ Band 이탈은 긴급 상황이므로 쿨다운보다 우선
+        # 0. 근접 보호: Band A 내라도 체결 위험이면 즉시 재배치
+        min_distance_bps = self.config.strategy.min_distance_bps
+        if min_distance_bps > 0:
+            for i, order in enumerate(state.buy_orders):
+                if order and order.is_active:
+                    distance_bps = self.band_calculator.calculate_distance_bps(
+                        reference_price, order.price
+                    )
+                    if distance_bps < min_distance_bps:
+                        return True, (
+                            f"BUY{i+1} 근접 ({distance_bps:.1f} < {min_distance_bps} bps)"
+                        )
+
+            for i, order in enumerate(state.sell_orders):
+                if order and order.is_active:
+                    distance_bps = self.band_calculator.calculate_distance_bps(
+                        reference_price, order.price
+                    )
+                    if distance_bps < min_distance_bps:
+                        return True, (
+                            f"SELL{i+1} 근접 ({distance_bps:.1f} < {min_distance_bps} bps)"
+                        )
+
+        # 1. Band 상태 기반 부분 재배치 필요 여부 확인 (쿨다운 무시)
         if self.config.strategy.rebalance_on_band_exit:
             # Buy 주문들 체크
             for i, order in enumerate(state.buy_orders):
@@ -1032,7 +1054,7 @@ class MakerFarmingStrategy:
                         self.config.strategy.max_distance_bps,
                     )
                     if needs_rebalance:
-                        logger.info(f"[{symbol}] ★ Band 이탈 감지 (쿨다운 무시): BUY{i+1} {reason}")
+                        logger.info(f"[{symbol}] Band 이탈 감지 (쿨다운 무시): BUY{i+1} {reason}")
                         return True, f"BUY{i+1} {reason}"
 
             # Sell 주문들 체크
@@ -1044,11 +1066,10 @@ class MakerFarmingStrategy:
                         self.config.strategy.max_distance_bps,
                     )
                     if needs_rebalance:
-                        logger.info(f"[{symbol}] ★ Band 이탈 감지 (쿨다운 무시): SELL{i+1} {reason}")
+                        logger.info(f"[{symbol}] Band 이탈 감지 (쿨다운 무시): SELL{i+1} {reason}")
                         return True, f"SELL{i+1} {reason}"
 
         # 2. Drift 기반 재배치 (쿨다운 적용)
-        # Drift는 덜 긴급하므로 쿨다운 체크
         if now < state.rebalance_cooldown_until:
             remaining = state.rebalance_cooldown_until - now
             logger.debug(f"[{symbol}] 쿨다운 중 ({remaining:.1f}초 남음) - Drift 스킵")
@@ -1093,9 +1114,8 @@ class MakerFarmingStrategy:
 
         now = time.time()
         min_duration = self.config.strategy.order_lock_seconds
-
-        # ★ Band 이탈인 경우 Duration 무시 (긴급 상황)
-        is_band_exit = "Band A 이탈" in reason
+        min_distance_bps = self.config.strategy.min_distance_bps
+        bypass_duration = force or "Band A 이탈" in reason or "근접" in reason
 
         # 재배치 대상 수집 (취소할 주문들)
         buy_to_rebalance = []  # [(index, order)]
@@ -1109,17 +1129,25 @@ class MakerFarmingStrategy:
                     buy_to_rebalance.append((i, order))
                     continue
 
-                # ★ Band 이탈이 아닌 경우에만 Duration 체크
-                if not is_band_exit:
+                # Band 이탈/근접은 Duration 무시 (체결 위험 우선)
+                if not bypass_duration:
                     duration = now - order.created_at
                     if duration < min_duration:
                         logger.debug(f"[{symbol}] BUY{i+1} Duration 미충족 ({duration:.1f}s) - 스킵")
                         continue
 
+                if "근접" in reason and min_distance_bps > 0:
+                    distance_bps = self.band_calculator.calculate_distance_bps(
+                        reference_price, order.price
+                    )
+                    if distance_bps < min_distance_bps:
+                        buy_to_rebalance.append((i, order))
+                    continue
+
                 needs_rebalance, _ = self.band_calculator.needs_rebalance(
                     reference_price, order.price, self.config.strategy.max_distance_bps
                 )
-                if needs_rebalance or "Drift" in reason or is_band_exit:
+                if needs_rebalance or "Drift" in reason:
                     buy_to_rebalance.append((i, order))
 
         # Sell 주문들 체크
@@ -1130,17 +1158,25 @@ class MakerFarmingStrategy:
                     sell_to_rebalance.append((i, order))
                     continue
 
-                # ★ Band 이탈이 아닌 경우에만 Duration 체크
-                if not is_band_exit:
+                # Band 이탈/근접은 Duration 무시 (체결 위험 우선)
+                if not bypass_duration:
                     duration = now - order.created_at
                     if duration < min_duration:
                         logger.debug(f"[{symbol}] SELL{i+1} Duration 미충족 ({duration:.1f}s) - 스킵")
                         continue
 
+                if "근접" in reason and min_distance_bps > 0:
+                    distance_bps = self.band_calculator.calculate_distance_bps(
+                        reference_price, order.price
+                    )
+                    if distance_bps < min_distance_bps:
+                        sell_to_rebalance.append((i, order))
+                    continue
+
                 needs_rebalance, _ = self.band_calculator.needs_rebalance(
                     reference_price, order.price, self.config.strategy.max_distance_bps
                 )
-                if needs_rebalance or "Drift" in reason or is_band_exit:
+                if needs_rebalance or "Drift" in reason:
                     sell_to_rebalance.append((i, order))
 
         # 교차 순차 재배치: Buy1 → Sell1 → Buy2 → Sell2 순서
