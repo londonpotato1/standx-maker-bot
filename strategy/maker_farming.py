@@ -1013,19 +1013,15 @@ class MakerFarmingStrategy:
                 missing.append(f"SELL {active_sell}/{num_orders}")
             return True, f"주문 부족: {', '.join(missing)}"
 
-        # 쿨다운 체크 (활성 주문이 모두 있을 때만)
-        now = time.time()
-        if now < state.rebalance_cooldown_until:
-            remaining = state.rebalance_cooldown_until - now
-            logger.debug(f"[{symbol}] 쿨다운 중 ({remaining:.1f}초 남음)")
-            return False, ""
-
         # 현재 기준 가격 (mark price 우선)
         reference_price = self.price_tracker.get_reference_price(symbol)
         if reference_price <= 0:
             return False, ""
 
-        # 1. Band 상태 기반 부분 재배치 필요 여부 확인
+        now = time.time()
+
+        # 1. Band 상태 기반 부분 재배치 필요 여부 확인 (쿨다운 무시!)
+        # ★ Band 이탈은 긴급 상황이므로 쿨다운보다 우선
         if self.config.strategy.rebalance_on_band_exit:
             # Buy 주문들 체크
             for i, order in enumerate(state.buy_orders):
@@ -1036,6 +1032,7 @@ class MakerFarmingStrategy:
                         self.config.strategy.max_distance_bps,
                     )
                     if needs_rebalance:
+                        logger.info(f"[{symbol}] ★ Band 이탈 감지 (쿨다운 무시): BUY{i+1} {reason}")
                         return True, f"BUY{i+1} {reason}"
 
             # Sell 주문들 체크
@@ -1047,9 +1044,16 @@ class MakerFarmingStrategy:
                         self.config.strategy.max_distance_bps,
                     )
                     if needs_rebalance:
+                        logger.info(f"[{symbol}] ★ Band 이탈 감지 (쿨다운 무시): SELL{i+1} {reason}")
                         return True, f"SELL{i+1} {reason}"
 
-        # 2. Drift 기반 재배치 (기준가격 변동 시)
+        # 2. Drift 기반 재배치 (쿨다운 적용)
+        # Drift는 덜 긴급하므로 쿨다운 체크
+        if now < state.rebalance_cooldown_until:
+            remaining = state.rebalance_cooldown_until - now
+            logger.debug(f"[{symbol}] 쿨다운 중 ({remaining:.1f}초 남음) - Drift 스킵")
+            return False, ""
+
         if state.last_reference_price > 0:
             drift_bps = abs(reference_price - state.last_reference_price) / state.last_reference_price * 10000
             threshold = self.config.strategy.drift_threshold_bps
