@@ -54,3 +54,7 @@ htmlcov/
 # 기타
 .DS_Store
 Thumbs.db
+
+# 암호화된 자격증명 (커밋 금지)
+data/credentials.enc
+data/.salt
