@@ -122,7 +122,7 @@ fill_protection:
     enabled: true
     # 변동 트리거 (bps) - 이 이상 변동 시 해당 방향 주문 취소
     # 예: +3bps 상승 → 매수 주문 취소 (매수가에 도달 위험)
-    trigger_bps: 3.0
+    trigger_bps: 2.5
     # 감지 윈도우 (초)
     window_seconds: 0.5
     # 연속 트리거 방지 쿨다운 (초)
