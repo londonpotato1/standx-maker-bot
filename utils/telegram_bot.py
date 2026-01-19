@@ -482,11 +482,13 @@ class TelegramBot:
             return
 
         # 명령어 처리
-        if text.startswith('/'):
-            parts = text.split()
-            command = parts[0].lower()
-            args = parts[1:] if len(parts) > 1 else []
-            await self._handle_command(command, args)
+        if not text.startswith('/'):
+            return
+
+        parts = text.split()
+        command = parts[0].lower()
+        args = parts[1:] if len(parts) > 1 else []
+        await self._handle_command(command, args)
 
     async def _handle_callback(self, callback_data: str):
         """콜백 데이터 처리 (버튼 클릭)"""
