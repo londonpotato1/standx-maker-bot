@@ -55,6 +55,7 @@ htmlcov/
 .DS_Store
 Thumbs.db
 
-# 암호화된 자격증명 (커밋 금지)
-data/credentials.enc
-data/.salt
+# 암호화된 자격증명 - MASTER_PASSWORD 없이는 복호화 불가
+# Railway 배포 시 필요하므로 커밋 허용
+# data/credentials.enc
+# data/.salt
