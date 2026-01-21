@@ -39,7 +39,7 @@ strategy:
 
   # 거리 설정 (bps = 0.01%)
   # Band A 범위: 0-10 bps (100% 포인트)
-  min_distance_bps: 5       # 최소 거리 (체결 방지)
+  min_distance_bps: 7       # 근접 보호 트리거 (7bps 이내면 즉시 재배치)
   target_distance_bps: 8    # 목표 거리 (1+1 전략용, 2+2에서는 order_distances_bps 사용)
   max_distance_bps: 10      # 최대 거리 (Band A 한계)
 
