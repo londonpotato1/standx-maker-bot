@@ -35,7 +35,7 @@ strategy:
   # 1+1 전략 설정 (방향당 주문 개수)
   num_orders_per_side: 1    # 1=1+1, 2=2+2 전략
   order_distances_bps:      # 각 주문의 거리 (bps)
-    - 7.5                   # 주.5bps (Band A 내, 2.5bps 여유)
+    - 8.5                   # 8.5bps (Band A 내, 체결 방지)
 
   # 거리 설정 (bps = 0.01%)
   # Band A 범위: 0-10 bps (100% 포인트)
@@ -50,8 +50,8 @@ strategy:
   # 동적 거리 설정 (spread/volatility 기반)
   dynamic_distance:
     enabled: true           # 업타임 개선을 위해 활성화
-    min_bps: 5.5            # 동적 최소 거리
-    max_bps: 8.5            # 동적 최대 거리 (Band A 내, 10bps 경계에서 여유)
+    min_bps: 8.0            # 동적 최소 거리 (8bps)
+    max_bps: 9.0            # 동적 최대 거리 (9bps, Band A 내)
     spread_factor: 0.5      # 스프레드 * factor
     volatility_factor: 0.3  # 변동성 * factor (낮춤)
 
