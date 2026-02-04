@@ -47,15 +47,10 @@ logs/
 .coverage
 htmlcov/
 
-# 민감한 데이터 - 평문 개인키는 절대 커밋 금지!
-# data/credentials.enc와 data/.salt는 암호화되어 있으므로 커밋 가능
-# (MASTER_PASSWORD 없이는 복호화 불가)
+# 민감한 데이터
+data/credentials.enc
+data/.salt
 
 # 기타
 .DS_Store
 Thumbs.db
-
-# 암호화된 자격증명 - MASTER_PASSWORD 없이는 복호화 불가
-# Railway 배포 시 필요하므로 커밋 허용
-# data/credentials.enc
-# data/.salt
